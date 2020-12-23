@@ -1,3 +1,4 @@
+use core::cmp::Ordering;
 use std::fmt;
 
 /*
@@ -19,12 +20,30 @@ const WHITE: u8 = 0b10000000;
 
 const COLOR_MASK: u8 = 0b11000000;
 
+const N_RANKS: usize = 8;
+const N_FILES: usize = 8;
+const N_SQUARES: usize = N_RANKS * N_FILES;
+
 #[derive(Debug)]
 enum BoardError {
     NoPieceOnFromSquare(Square),
+    NotImplemented,
 }
 
-#[derive(Debug)]
+impl fmt::Display for BoardError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            BoardError::NoPieceOnFromSquare(square) => {
+                write!(f, "Square {:?} does not have a piece", square)
+            }
+            BoardError::NotImplemented => {
+                write!(f, "Missing implementation")
+            }
+        }
+    }
+}
+
+#[derive(Debug, Eq, PartialEq)]
 enum Rank {
     _1,
     _2,
@@ -47,7 +66,7 @@ const RANKS: [Rank; 8] = [
     Rank::_8,
 ];
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 enum File {
     A,
     B,
@@ -70,29 +89,22 @@ const FILES: [File; 8] = [
     File::H,
 ];
 
-impl fmt::Display for BoardError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            BoardError::NoPieceOnFromSquare(square) => {
-                write!(f, "Square {:?} does not have a piece", square)
-            }
-        }
-    }
-}
-
 #[derive(Clone)]
 struct Board {
     board: [u8; 64],
-
-    
 }
 
 impl Board {
+    fn empty() -> Board {
+        Board { board: [EMPTY; 64] }
+    }
+
     /*
      * Convert a square, eg F2, to an index into the board array.
      */
     fn square_index(of: &Square) -> usize {
-        Board::index(&of.file, &of.rank)
+        let &Square(file, rank) = &of;
+        Board::index(file, rank)
     }
 
     fn index(file: &File, rank: &Rank) -> usize {
@@ -149,6 +161,36 @@ impl Board {
         new.board[i] = EMPTY;
         Ok(new)
     }
+
+    fn possible_moves(&self, from: Square) -> Result<Vec<Square>, BoardError> {
+        // TODO: check color, turn
+        match self.board[Board::square_index(&from)] & PIECE_MASK {
+            EMPTY => Err(BoardError::NoPieceOnFromSquare(from)),
+            ROOK => Ok(self._rook_moves(from)),
+            _ => Err(BoardError::NotImplemented),
+        }
+    }
+
+    fn _rook_moves(&self, from: Square) -> Vec<Square> {
+        let index = Board::square_index(&from);
+
+        // up-down
+        let mut moves: Vec<Square> = (0..N_RANKS)
+            .map(|j| index % N_RANKS + (j * N_FILES)) // enumerate from top of board
+            .map(|k| Square::from_index(k))
+            .filter(|s| *s != from)
+            .collect();
+
+        // side-to-side
+        moves.extend(
+            (0..N_FILES)
+                .map(|j| (index / N_RANKS) * N_FILES + j) // enumerate from beginning of row
+                .map(|k| Square::from_index(k))
+                .filter(|s| *s != from),
+        );
+
+        moves
+    }
 }
 
 fn square_symbol(p: u8) -> char {
@@ -166,23 +208,70 @@ fn square_symbol(p: u8) -> char {
     match p & COLOR_MASK {
         BLACK => uncolored,
         WHITE => uncolored.to_ascii_uppercase(),
-	unknown if unknown & PIECE_MASK == EMPTY => ' ',
+        unknown if unknown & PIECE_MASK == EMPTY => ' ',
         unknown => panic!("Unknown color {}, not possible", unknown),
     }
 }
 
-#[derive(Debug)]
-struct Square {
-    file: File,
-    rank: Rank,
-}
+#[derive(Debug, Eq, PartialEq)]
+struct Square(File, Rank);
 
 impl Square {
     fn new(file: File, rank: Rank) -> Square {
-        Square {
-            file: file,
-            rank: rank,
+        Square(file, rank)
+    }
+
+    fn from_index(i: usize) -> Square {
+        use File::*;
+        use Rank::*;
+
+        if i >= N_SQUARES {
+            panic!("Square index {} is larger than max {}", i, N_SQUARES);
         }
+
+        let rank = match i / N_RANKS {
+            7 => _1,
+            6 => _2,
+            5 => _3,
+            4 => _4,
+            3 => _5,
+            2 => _6,
+            1 => _7,
+            0 => _8,
+            _ => panic!("Unknown rank"),
+        };
+
+        let file = match i % N_FILES {
+            0 => A,
+            1 => B,
+            2 => C,
+            3 => D,
+            4 => E,
+            5 => F,
+            6 => G,
+            7 => H,
+            _ => panic!("Unknown file"),
+        };
+
+        Square::new(file, rank)
+    }
+}
+
+impl From<(File, Rank)> for Square {
+    fn from((file, rank): (File, Rank)) -> Self {
+        Square::new(file, rank)
+    }
+}
+
+impl Ord for Square {
+    fn cmp(&self, other: &Self) -> Ordering {
+        Board::square_index(self).cmp(&Board::square_index(other))
+    }
+}
+
+impl PartialOrd for Square {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
     }
 }
 
@@ -207,18 +296,13 @@ impl fmt::Display for Board {
 }
 
 fn main() {
-    println!("Hello, world!");
-
-    let board: [u8; 64] = [0; 64];
-    //    println!("{:?}", board);
-
-    let mut b = Board { board: board }
+    let b = Board::empty()
         .place_piece(PAWN | WHITE, Square::new(File::A, Rank::_2))
         .place_piece(KNIGHT | WHITE, Square::new(File::B, Rank::_1))
         .place_piece(BISHOP | WHITE, Square::new(File::C, Rank::_1))
-        .place_piece(KING | WHITE, Square::new(File::E, Rank::_1))   	
+        .place_piece(KING | WHITE, Square::new(File::E, Rank::_1))
         .place_piece(BISHOP | BLACK, Square::new(File::C, Rank::_8))
-        .place_piece(KING | BLACK, Square::new(File::E, Rank::_8));    
+        .place_piece(KING | BLACK, Square::new(File::E, Rank::_8));
 
     // b.board[2] = KNIGHT | WHITE;
     // b.board[3] = BISHOP | WHITE;
@@ -228,8 +312,11 @@ fn main() {
     println!("{}", b);
     println!(
         "{}",
-        b.move_piece(Square::new(File::A, Rank::_2), Square::new(File::A, Rank::_4))
-            .unwrap()
+        b.move_piece(
+            Square::new(File::A, Rank::_2),
+            Square::new(File::A, Rank::_4)
+        )
+        .unwrap()
     );
 
     // // println!(
@@ -245,5 +332,69 @@ fn main() {
     // println!("{}", QUEEN);
     //    println!("{}", KING);
 
-    println!("{}", square_symbol(QUEEN |  WHITE));
+    println!("{}", square_symbol(QUEEN | WHITE));
+}
+
+fn sorted(mut v: Vec<Square>) -> Vec<Square> {
+    v.sort();
+    v
+}
+
+#[test]
+fn test_rook() {
+    let board = Board::empty()
+        .place_piece(ROOK | WHITE, Square::new(File::A, Rank::_1))
+        .place_piece(ROOK | WHITE, Square::new(File::C, Rank::_6));
+
+    assert_eq!(
+        sorted(
+            board
+                .possible_moves(Square::new(File::A, Rank::_1))
+                .unwrap()
+        ),
+        sorted(vec![
+            // rank moves (up-down)
+            (File::A, Rank::_2).into(),
+            (File::A, Rank::_3).into(),
+            (File::A, Rank::_4).into(),
+            (File::A, Rank::_5).into(),
+            (File::A, Rank::_6).into(),
+            (File::A, Rank::_7).into(),
+            (File::A, Rank::_8).into(),
+            // file moves (side-to-side)
+            (File::B, Rank::_1).into(),
+            (File::C, Rank::_1).into(),
+            (File::D, Rank::_1).into(),
+            (File::E, Rank::_1).into(),
+            (File::F, Rank::_1).into(),
+            (File::G, Rank::_1).into(),
+            (File::H, Rank::_1).into(),
+        ])
+    );
+
+    assert_eq!(
+        sorted(
+            board
+                .possible_moves(Square::new(File::C, Rank::_6))
+                .unwrap()
+        ),
+        sorted(vec![
+            // rank moves (up-down)
+            (File::C, Rank::_1).into(),
+            (File::C, Rank::_2).into(),
+            (File::C, Rank::_3).into(),
+            (File::C, Rank::_4).into(),
+            (File::C, Rank::_5).into(),
+            (File::C, Rank::_7).into(),
+            (File::C, Rank::_8).into(),
+            // file moves (side-to-side)
+            (File::A, Rank::_6).into(),
+            (File::B, Rank::_6).into(),
+            (File::D, Rank::_6).into(),
+            (File::E, Rank::_6).into(),
+            (File::F, Rank::_6).into(),
+            (File::G, Rank::_6).into(),
+            (File::H, Rank::_6).into(),
+        ])
+    );
 }
