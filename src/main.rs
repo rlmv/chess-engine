@@ -171,6 +171,14 @@ impl Board {
         self.board[square] & PIECE_MASK == 0
     }
 
+    fn can_capture(&self, target: usize, attacker: u8) -> bool {
+        self.is_occupied(target) && ((self.board[target] ^ attacker) & COLOR_MASK == COLOR_MASK)
+    }
+
+    fn is_occupied_by_color(&self, square: usize, color: u8) -> bool {
+        self.is_occupied(square) && (self.board[square] & COLOR_MASK) == (color & COLOR_MASK)
+    }
+
     fn possible_moves(&self, from: Square) -> Result<Vec<Square>, BoardError> {
         // TODO: check color, turn
         match self.board[Board::square_index(&from)] & PIECE_MASK {
@@ -183,32 +191,20 @@ impl Board {
     fn _rook_moves(&self, from: Square) -> Vec<Square> {
         let index = Board::square_index(&from);
 
-        // up-down
-        let mut moves: Vec<Square> = (0..N_RANKS)
-            .map(|j| index % N_RANKS + (j * N_FILES)) // enumerate from top of board
-            .map(|k| Square::from_index(k))
-            .filter(|s| *s != from)
-            .collect();
-
-        // side-to-side
-        moves.extend(
-            (0..N_FILES)
-                .map(|j| (index / N_RANKS) * N_FILES + j) // enumerate from beginning of row
-                .map(|k| Square::from_index(k))
-                .filter(|s| *s != from),
-        );
+        // TODO: function.
+        // TODO: check that square is occupied.
+        let attacker = self.board[index];
 
         let mut maybe_moves: Vec<Square> = Vec::new();
-
-        // coordinates
-        // let row = index / N_RANKS;
-        // let col = index % N_RANKS;
 
         // side-to-side
 
         let mut target = index - 1;
         while target % N_FILES != (N_FILES - 1) {
-            if self.is_occupied(target) {
+            if self.is_occupied_by_color(target, attacker) {
+                break;
+            } else if self.can_capture(target, attacker) {
+                maybe_moves.push(Square::from_index(target));
                 break;
             } else {
                 maybe_moves.push(Square::from_index(target));
@@ -218,7 +214,10 @@ impl Board {
 
         target = index + 1;
         while target % N_FILES != 0 {
-            if self.is_occupied(target) {
+            if self.is_occupied_by_color(target, attacker) {
+                break;
+            } else if self.can_capture(target, attacker) {
+                maybe_moves.push(Square::from_index(target));
                 break;
             } else {
                 maybe_moves.push(Square::from_index(target));
@@ -230,7 +229,10 @@ impl Board {
         while target >= N_FILES {
             // avoid underflow
             target -= N_FILES; // go back a row
-            if self.is_occupied(target) {
+            if self.is_occupied_by_color(target, attacker) {
+                break;
+            } else if self.can_capture(target, attacker) {
+                maybe_moves.push(Square::from_index(target));
                 break;
             } else {
                 maybe_moves.push(Square::from_index(target));
@@ -239,13 +241,35 @@ impl Board {
 
         target = index + N_FILES;
         while target < N_SQUARES {
-            if self.is_occupied(target) {
+            if self.is_occupied_by_color(target, attacker) {
+                break;
+            } else if self.can_capture(target, attacker) {
+                maybe_moves.push(Square::from_index(target));
                 break;
             } else {
                 maybe_moves.push(Square::from_index(target));
                 target += N_FILES; // advance a row
             }
         }
+
+        // up-down
+        // let mut moves: Vec<Square> = (0..N_RANKS)
+        //     .map(|j| index % N_RANKS + (j * N_FILES)) // enumerate from top of board
+        //     .map(|k| Square::from_index(k))
+        //     .filter(|s| *s != from)
+        //     .collect();
+
+        // // side-to-side
+        // moves.extend(
+        //     (0..N_FILES)
+        //         .map(|j| (index / N_RANKS) * N_FILES + j) // enumerate from beginning of row
+        //         .map(|k| Square::from_index(k))
+        //         .filter(|s| *s != from),
+        // );
+
+        // coordinates
+        // let row = index / N_RANKS;
+        // let col = index % N_RANKS;
 
         // for j in (1..=col).rev() {
         //     maybe_moves.push(Square::from_index(index - j));
@@ -494,6 +518,34 @@ fn test_rook_obstructed_movement() {
 }
 
 #[test]
+fn test_rook_capture() {
+    let board = Board::empty()
+        .place_piece(ROOK | WHITE, Square(File::E, Rank::_5))
+        .place_piece(PAWN | BLACK, Square(File::E, Rank::_2))
+        .place_piece(PAWN | BLACK, Square(File::E, Rank::_6))
+        .place_piece(PAWN | BLACK, Square(File::A, Rank::_5))
+        .place_piece(PAWN | BLACK, Square(File::G, Rank::_5));
+
+    assert_eq!(
+        sorted(board.possible_moves(Square(File::E, Rank::_5)).unwrap()),
+        sorted(vec![
+            // rank moves (up-down)
+            (File::E, Rank::_2).into(),
+            (File::E, Rank::_3).into(),
+            (File::E, Rank::_4).into(),
+            (File::E, Rank::_6).into(),
+            // file moves (side-to-side)
+            (File::A, Rank::_5).into(),
+            (File::B, Rank::_5).into(),
+            (File::C, Rank::_5).into(),
+            (File::D, Rank::_5).into(),
+            (File::F, Rank::_5).into(),
+            (File::G, Rank::_5).into(),
+        ])
+    );
+}
+
+#[test]
 fn test_is_empty() {
     let board = Board::empty()
         .place_piece(ROOK | WHITE, Square(File::A, Rank::_1))
@@ -501,10 +553,31 @@ fn test_is_empty() {
 
     assert!(!board.is_empty(Square(File::A, Rank::_1).index()));
     assert!(board.is_occupied(Square(File::A, Rank::_1).index()));
+    assert!(board.is_occupied_by_color(Square(File::A, Rank::_1).index(), WHITE));
+    assert!(!board.is_occupied_by_color(Square(File::A, Rank::_1).index(), BLACK));
 
     assert!(!board.is_empty(Square(File::C, Rank::_6).index()));
     assert!(board.is_occupied(Square(File::C, Rank::_6).index()));
+    assert!(!board.is_occupied_by_color(Square(File::C, Rank::_6).index(), WHITE));
+    assert!(board.is_occupied_by_color(Square(File::C, Rank::_6).index(), BLACK));
 
     assert!(board.is_empty(Square(File::D, Rank::_3).index()));
     assert!(!board.is_occupied(Square(File::D, Rank::_3).index()));
+    assert!(!board.is_occupied_by_color(Square(File::D, Rank::_3).index(), WHITE));
+    assert!(!board.is_occupied_by_color(Square(File::D, Rank::_3).index(), BLACK));
+}
+
+#[test]
+fn test_can_capture() {
+    let board = Board::empty()
+        .place_piece(ROOK | WHITE, Square(File::A, Rank::_1))
+        .place_piece(PAWN | BLACK, Square(File::C, Rank::_6));
+
+    assert!(!board.can_capture(Square(File::B, Rank::_7).index(), WHITE));
+    assert!(!board.can_capture(Square(File::A, Rank::_1).index(), WHITE));
+    assert!(board.can_capture(Square(File::C, Rank::_6).index(), WHITE));
+
+    assert!(!board.can_capture(Square(File::B, Rank::_7).index(), BLACK));
+    assert!(board.can_capture(Square(File::A, Rank::_1).index(), BLACK));
+    assert!(!board.can_capture(Square(File::C, Rank::_6).index(), BLACK));
 }
