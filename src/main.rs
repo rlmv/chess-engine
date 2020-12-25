@@ -28,6 +28,7 @@ const N_SQUARES: usize = N_RANKS * N_FILES;
 enum BoardError {
     NoPieceOnFromSquare(Square),
     NotImplemented,
+    UnexpectedPiece(String),
 }
 
 impl fmt::Display for BoardError {
@@ -39,9 +40,14 @@ impl fmt::Display for BoardError {
             BoardError::NotImplemented => {
                 write!(f, "Missing implementation")
             }
+            BoardError::UnexpectedPiece(msg) => {
+                write!(f, "{}", msg)
+            }
         }
     }
 }
+
+type MoveVector = (i8, i8); // x, y
 
 #[derive(Debug, Eq, PartialEq)]
 enum Rank {
@@ -179,13 +185,79 @@ impl Board {
         self.is_occupied(square) && (self.board[square] & COLOR_MASK) == (color & COLOR_MASK)
     }
 
+    fn opposing_color(&self, color: u8) -> u8 {
+        (color & COLOR_MASK) ^ COLOR_MASK
+    }
+
+    fn is_in_check(&self, square: usize) -> Result<bool, BoardError> {
+        if self.board[square] & PIECE_MASK != KING {
+            return Err(BoardError::UnexpectedPiece(String::from(
+                "Expected to find king",
+            )));
+        }
+
+        for (i, _) in self.board.iter().enumerate() {
+            if self.is_occupied_by_color(i, self.opposing_color(self.board[square]))
+                && self
+                    .possible_moves(Square::from_index(i))?
+                    .contains(&Square::from_index(square))
+            {
+                return Ok(true);
+            }
+        }
+
+        Ok(false)
+    }
+
     fn possible_moves(&self, from: Square) -> Result<Vec<Square>, BoardError> {
         // TODO: check color, turn
         match self.board[Board::square_index(&from)] & PIECE_MASK {
             EMPTY => Err(BoardError::NoPieceOnFromSquare(from)),
             ROOK => Ok(self._rook_moves(from)),
+            KING => Ok(self._king_moves(from)),
             _ => Err(BoardError::NotImplemented),
         }
+    }
+
+    fn _king_moves(&self, from: Square) -> Vec<Square> {
+        let index = Board::square_index(&from);
+        let attacker = self.board[index];
+
+        let mut moves: Vec<Square> = Vec::new();
+        let move_vectors: Vec<MoveVector> = vec![
+            (1, 1),
+            (1, 0),
+            (1, -1),
+            (0, -1),
+            (-1, -1),
+            (-1, 0),
+            (-1, 1),
+            (0, 1),
+        ];
+
+        let signed_index = index as i8;
+
+        for (x, y) in move_vectors {
+            let target = signed_index + x + (y * N_FILES as i8);
+
+            if x == -1 && target % N_FILES as i8 == (N_FILES as i8 - 1) {
+                // ignore: wrap around to left
+            } else if x == 1 && target % N_FILES as i8 == 0 {
+                // ignore: wrap around to right
+            } else if target < 0 {
+                // out top of board
+            } else if target >= N_SQUARES as i8 {
+                // out bottom
+            } else if self.is_occupied_by_color(target as usize, attacker) { // TODO usize cast is bad
+                 // cannot move into square of own piece
+            } else {
+                moves.push(Square::from_index(target as usize));
+            }
+        }
+
+        // TODO: ensure that king cannot move into check
+
+        moves
     }
 
     fn _rook_moves(&self, from: Square) -> Vec<Square> {
@@ -440,6 +512,91 @@ fn main() {
 fn sorted(mut v: Vec<Square>) -> Vec<Square> {
     v.sort();
     v
+}
+
+#[test]
+fn test_king_free_movement() {
+    let board = Board::empty()
+        .place_piece(KING | BLACK, Square(File::A, Rank::_1))
+        .place_piece(KING | WHITE, Square(File::C, Rank::_6));
+
+    assert_eq!(
+        sorted(board.possible_moves(Square(File::A, Rank::_1)).unwrap()),
+        sorted(vec![
+            (File::A, Rank::_2).into(),
+            (File::B, Rank::_2).into(),
+            (File::B, Rank::_1).into(),
+        ])
+    );
+
+    assert_eq!(
+        sorted(board.possible_moves(Square(File::C, Rank::_6)).unwrap()),
+        sorted(vec![
+            (File::C, Rank::_7).into(),
+            (File::D, Rank::_7).into(),
+            (File::D, Rank::_6).into(),
+            (File::D, Rank::_5).into(),
+            (File::C, Rank::_5).into(),
+            (File::B, Rank::_5).into(),
+            (File::B, Rank::_6).into(),
+            (File::B, Rank::_7).into(),
+        ])
+    );
+
+    assert_eq!(
+        sorted(
+            Board::empty()
+                .place_piece(KING | BLACK, Square(File::H, Rank::_8))
+                .possible_moves(Square(File::H, Rank::_8))
+                .unwrap()
+        ),
+        sorted(vec![
+            (File::H, Rank::_7).into(),
+            (File::G, Rank::_7).into(),
+            (File::G, Rank::_8).into(),
+        ])
+    );
+}
+
+#[test]
+fn test_king_obstructed_movement() {
+    let board = Board::empty()
+        .place_piece(KING | WHITE, Square(File::F, Rank::_2))
+        .place_piece(PAWN | WHITE, Square(File::G, Rank::_3))
+        .place_piece(PAWN | WHITE, Square(File::F, Rank::_3))
+        .place_piece(PAWN | WHITE, Square(File::E, Rank::_2))
+        .place_piece(PAWN | WHITE, Square(File::F, Rank::_1));
+
+    assert_eq!(
+        sorted(board.possible_moves(Square(File::F, Rank::_2)).unwrap()),
+        sorted(vec![
+            (File::G, Rank::_2).into(),
+            (File::G, Rank::_1).into(),
+            (File::E, Rank::_1).into(),
+            (File::E, Rank::_3).into(),
+        ])
+    );
+}
+
+#[test]
+fn test_king_in_check() {
+    assert!(Board::empty()
+        .place_piece(KING | WHITE, Square(File::F, Rank::_2))
+        .place_piece(ROOK | BLACK, Square(File::F, Rank::_5))
+        .is_in_check(Square(File::F, Rank::_2).index())
+        .unwrap());
+
+    assert!(Board::empty()
+        .place_piece(KING | WHITE, Square(File::F, Rank::_2))
+        .place_piece(ROOK | BLACK, Square(File::A, Rank::_2))
+        .is_in_check(Square(File::F, Rank::_2).index())
+        .unwrap());
+
+    assert!(!Board::empty()
+        .place_piece(KING | WHITE, Square(File::F, Rank::_2))
+        .place_piece(ROOK | BLACK, Square(File::E, Rank::_5))
+        .is_in_check(Square(File::F, Rank::_2).index())
+        .unwrap());
 }
 
 #[test]
