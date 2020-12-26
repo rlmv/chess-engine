@@ -1,9 +1,9 @@
 use core::cmp::Ordering;
 use std::fmt;
+use std::slice::Iter;
 
-/*
- * TODO: 0- or 1-indexing?
- */
+type Piece = u8;
+type Color = u8;
 
 const EMPTY: u8 = 0b00000000;
 const PAWN: u8 = 0b00000001;
@@ -29,6 +29,7 @@ enum BoardError {
     NoPieceOnFromSquare(Square),
     NotImplemented,
     UnexpectedPiece(String),
+    IllegalState(String),
 }
 
 impl fmt::Display for BoardError {
@@ -37,19 +38,16 @@ impl fmt::Display for BoardError {
             BoardError::NoPieceOnFromSquare(square) => {
                 write!(f, "Square {:?} does not have a piece", square)
             }
-            BoardError::NotImplemented => {
-                write!(f, "Missing implementation")
-            }
-            BoardError::UnexpectedPiece(msg) => {
-                write!(f, "{}", msg)
-            }
+            BoardError::NotImplemented => write!(f, "Missing implementation"),
+            BoardError::UnexpectedPiece(msg) => write!(f, "{}", msg),
+            BoardError::IllegalState(msg) => write!(f, "{}", msg),
         }
     }
 }
 
 type MoveVector = (i8, i8); // x, y
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 enum Rank {
     _1,
     _2,
@@ -59,6 +57,12 @@ enum Rank {
     _6,
     _7,
     _8,
+}
+
+impl fmt::Display for Rank {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", format!("{:?}", self).trim_start_matches("_"))
+    }
 }
 
 const RANKS: [Rank; 8] = [
@@ -72,7 +76,7 @@ const RANKS: [Rank; 8] = [
     Rank::_8,
 ];
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 enum File {
     A,
     B,
@@ -82,6 +86,12 @@ enum File {
     F,
     G,
     H,
+}
+
+impl fmt::Display for File {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
 }
 
 const FILES: [File; 8] = [
@@ -181,50 +191,78 @@ impl Board {
         self.is_occupied(target) && ((self.board[target] ^ attacker) & COLOR_MASK == COLOR_MASK)
     }
 
-    fn is_occupied_by_color(&self, square: usize, color: u8) -> bool {
+    fn is_occupied_by_color(&self, square: usize, color: Color) -> bool {
         self.is_occupied(square) && (self.board[square] & COLOR_MASK) == (color & COLOR_MASK)
     }
 
-    fn opposing_color(&self, color: u8) -> u8 {
+    fn opposing_color(&self, color: Color) -> Color {
         (color & COLOR_MASK) ^ COLOR_MASK
     }
 
-    fn is_in_check(&self, king_square: usize) -> Result<bool, BoardError> {
+    fn is_in_check(&self, color: Color) -> Result<bool, BoardError> {
+        let kings: Vec<Square> = self
+            .all_pieces_of_color(color)
+            .iter()
+            .filter(|(p, _)| *p & PIECE_MASK == KING && *p & COLOR_MASK == color)
+            .map(|(_, s)| s.clone())
+            .collect();
 
-	let king:u8 = self.board[king_square];
-        if king & PIECE_MASK != KING {
-            return Err(BoardError::UnexpectedPiece(String::from(
-                "Expected to find king",
+        if kings.len() == 0 {
+            return Err(BoardError::IllegalState(format!(
+                "Board is missing KING of color {}",
+                color
+            )));
+        } else if kings.len() > 1 {
+            return Err(BoardError::IllegalState(format!(
+                "Board has {} KINGs of color {}",
+                kings.len(),
+                color
             )));
         }
 
-	self.attacked_by_color(king_square, self.opposing_color(king))
+        let king_square = &kings[0];
+        let king: Piece = self.board[king_square.index()];
+
+        self.attacked_by_color(king_square.index(), self.opposing_color(king))
     }
 
-    fn attacked_by_color(&self, square: usize, color: u8) -> Result<bool, BoardError> {
+    // attacking moves is a subset of other moves -
+    fn attacked_by_color(&self, square: usize, color: Color) -> Result<bool, BoardError> {
         for (i, _) in self.board.iter().enumerate() {
             if self.is_occupied_by_color(i, color)
                 && self
-                    .possible_moves(Square::from_index(i))?
+                    .possible_moves(Square::from_index(i), true)?
                     .contains(&Square::from_index(square))
             {
                 return Ok(true);
             }
         }
-	Ok(false)
+        Ok(false)
     }
 
-    fn possible_moves(&self, from: Square) -> Result<Vec<Square>, BoardError> {
+    fn possible_moves(
+        &self,
+        from: Square,
+        ignore_king_jeopardy: bool,
+    ) -> Result<Vec<Square>, BoardError> {
         // TODO: check color, turn
         match self.board[Board::square_index(&from)] & PIECE_MASK {
             EMPTY => Err(BoardError::NoPieceOnFromSquare(from)),
             ROOK => Ok(self._rook_moves(from)),
-            KING => self._king_moves(from),
+            KING => self._king_moves(from, ignore_king_jeopardy),
             _ => Err(BoardError::NotImplemented),
         }
     }
 
-    fn _king_moves(&self, from: Square) -> Result<Vec<Square>, BoardError> {
+    // TODO: this "ignore_king_jeopardy" flag feels hacky. Is there a way to
+    // simplify and avoid this? More efficient way to find all attackers of a square?
+    //
+    // Maybe don't need to exlude moves into check? Can instead remove those later with the is_in_check option?
+    fn _king_moves(
+        &self,
+        from: Square,
+        ignore_king_jeopardy: bool,
+    ) -> Result<Vec<Square>, BoardError> {
         let index = Board::square_index(&from);
         let king = self.board[index];
 
@@ -254,10 +292,15 @@ impl Board {
             } else if target >= N_SQUARES as i8 {
                 // out bottom
             } else if self.is_occupied_by_color(target as usize, king) { // TODO usize cast is bad
-                // cannot move into square of own piece
-	    } else if self.attacked_by_color(target as usize, self.opposing_color(king))? { // TODO usize cast is bad
-                // cannot move into check
-		// TODO: this blows the stack because of recursive calls
+                 // cannot move into square of own piece
+            } else if !ignore_king_jeopardy
+                && self.attacked_by_color(target as usize, self.opposing_color(king))?
+            {
+                // TODO usize cast is bad
+
+                // Cannot move *into* check.
+                // BUT: we don't care we are testing when the opponents king
+                // moves into check. Don't recurse.
             } else {
                 moves.push(Square::from_index(target as usize));
             }
@@ -369,6 +412,69 @@ impl Board {
 
         maybe_moves
     }
+
+    fn find_next_move(&self, color_to_move: Color) -> Result<Move, BoardError> {
+        Ok(Move {
+            from: Square::from_index(0),
+            to: Square::from_index(0),
+        })
+
+        // Find all pieces
+        // Generate all valid moves for those pieces.
+        // After each move, must not be in check - prune.
+        // Make each move - evaluate the position.
+        // Pick highest scoring move
+
+        // Evaluate checkmate?
+        // Evaluate stalemate?
+    }
+
+    fn all_pieces_of_color(&self, color: Color) -> Vec<(&Piece, Square)> {
+        let mut pieces: Vec<(&Piece, Square)> = Vec::new();
+
+        for (i, piece) in self.board.iter().enumerate() {
+            if piece & COLOR_MASK == color & COLOR_MASK {
+                pieces.push((piece, Square::from_index(i)));
+            }
+        }
+
+        pieces
+    }
+
+    fn checkmate(&self, color: Color) -> Result<bool, BoardError> {
+        if !self.is_in_check(color)? {
+            return Ok(false);
+        }
+
+        println!("In check. Evaluating for checkmate");
+
+        let pieces = self.all_pieces_of_color(color);
+
+        for (piece, square) in pieces.iter() {
+            for to_square in self.possible_moves(square.clone(), false)? {
+                println!(
+                    "Evaluating move {} from {} to {}",
+                    square_symbol(**piece),
+                    square,
+                    to_square
+                );
+
+                let moved_board = self.clone().move_piece(square.clone(), to_square)?;
+
+                // At least one way out!
+                if !moved_board.is_in_check(color)? {
+                    return Ok(false);
+                }
+            }
+        }
+
+        Ok(true)
+    }
+}
+
+struct Move {
+    from: Square,
+    to: Square,
 }
 
 fn square_symbol(p: u8) -> char {
@@ -391,7 +497,7 @@ fn square_symbol(p: u8) -> char {
     }
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 struct Square(File, Rank);
 
 impl Square {
@@ -454,6 +560,13 @@ impl Ord for Square {
 impl PartialOrd for Square {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
+    }
+}
+
+impl fmt::Display for Square {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Square(file, rank) = self;
+        write!(f, "{}{}", file, rank)
     }
 }
 
@@ -529,7 +642,11 @@ fn test_king_free_movement() {
         .place_piece(KING | WHITE, Square(File::C, Rank::_6));
 
     assert_eq!(
-        sorted(board.possible_moves(Square(File::A, Rank::_1)).unwrap()),
+        sorted(
+            board
+                .possible_moves(Square(File::A, Rank::_1), false)
+                .unwrap()
+        ),
         sorted(vec![
             (File::A, Rank::_2).into(),
             (File::B, Rank::_2).into(),
@@ -538,7 +655,11 @@ fn test_king_free_movement() {
     );
 
     assert_eq!(
-        sorted(board.possible_moves(Square(File::C, Rank::_6)).unwrap()),
+        sorted(
+            board
+                .possible_moves(Square(File::C, Rank::_6), false)
+                .unwrap()
+        ),
         sorted(vec![
             (File::C, Rank::_7).into(),
             (File::D, Rank::_7).into(),
@@ -555,7 +676,7 @@ fn test_king_free_movement() {
         sorted(
             Board::empty()
                 .place_piece(KING | BLACK, Square(File::H, Rank::_8))
-                .possible_moves(Square(File::H, Rank::_8))
+                .possible_moves(Square(File::H, Rank::_8), false)
                 .unwrap()
         ),
         sorted(vec![
@@ -576,7 +697,11 @@ fn test_king_obstructed_movement() {
         .place_piece(PAWN | WHITE, Square(File::F, Rank::_1));
 
     assert_eq!(
-        sorted(board.possible_moves(Square(File::F, Rank::_2)).unwrap()),
+        sorted(
+            board
+                .possible_moves(Square(File::F, Rank::_2), false)
+                .unwrap()
+        ),
         sorted(vec![
             (File::G, Rank::_2).into(),
             (File::G, Rank::_1).into(),
@@ -590,35 +715,36 @@ fn test_king_obstructed_movement() {
 fn test_king_cannot_move_into_check() {
     let board = Board::empty()
         .place_piece(KING | BLACK, Square(File::A, Rank::_1))
-        .place_piece(ROOK | WHITE, Square(File::C, Rank::_2));	
+        .place_piece(ROOK | WHITE, Square(File::C, Rank::_2));
 
     assert_eq!(
-        sorted(board.possible_moves(Square(File::A, Rank::_1)).unwrap()),
-        sorted(vec![
-            (File::B, Rank::_1).into(),
-        ])
+        sorted(
+            board
+                .possible_moves(Square(File::A, Rank::_1), false)
+                .unwrap()
+        ),
+        sorted(vec![(File::B, Rank::_1).into(),])
     );
 }
-
 
 #[test]
 fn test_king_in_check() {
     assert!(Board::empty()
         .place_piece(KING | WHITE, Square(File::F, Rank::_2))
         .place_piece(ROOK | BLACK, Square(File::F, Rank::_5))
-        .is_in_check(Square(File::F, Rank::_2).index())
+        .is_in_check(WHITE)
         .unwrap());
 
     assert!(Board::empty()
         .place_piece(KING | WHITE, Square(File::F, Rank::_2))
         .place_piece(ROOK | BLACK, Square(File::A, Rank::_2))
-        .is_in_check(Square(File::F, Rank::_2).index())
+        .is_in_check(WHITE)
         .unwrap());
 
     assert!(!Board::empty()
         .place_piece(KING | WHITE, Square(File::F, Rank::_2))
         .place_piece(ROOK | BLACK, Square(File::E, Rank::_5))
-        .is_in_check(Square(File::F, Rank::_2).index())
+        .is_in_check(WHITE)
         .unwrap());
 }
 
@@ -629,7 +755,11 @@ fn test_rook_free_movement() {
         .place_piece(ROOK | WHITE, Square(File::C, Rank::_6));
 
     assert_eq!(
-        sorted(board.possible_moves(Square(File::A, Rank::_1)).unwrap()),
+        sorted(
+            board
+                .possible_moves(Square(File::A, Rank::_1), false)
+                .unwrap()
+        ),
         sorted(vec![
             // rank moves (up-down)
             (File::A, Rank::_2).into(),
@@ -651,7 +781,11 @@ fn test_rook_free_movement() {
     );
 
     assert_eq!(
-        sorted(board.possible_moves(Square(File::C, Rank::_6)).unwrap()),
+        sorted(
+            board
+                .possible_moves(Square(File::C, Rank::_6), false)
+                .unwrap()
+        ),
         sorted(vec![
             // rank moves (up-down)
             (File::C, Rank::_1).into(),
@@ -683,7 +817,11 @@ fn test_rook_obstructed_movement() {
         .place_piece(PAWN | WHITE, Square(File::G, Rank::_5));
 
     assert_eq!(
-        sorted(board.possible_moves(Square(File::E, Rank::_5)).unwrap()),
+        sorted(
+            board
+                .possible_moves(Square(File::E, Rank::_5), false)
+                .unwrap()
+        ),
         sorted(vec![
             // rank moves (up-down)
             (File::E, Rank::_3).into(),
@@ -707,7 +845,11 @@ fn test_rook_capture() {
         .place_piece(PAWN | BLACK, Square(File::G, Rank::_5));
 
     assert_eq!(
-        sorted(board.possible_moves(Square(File::E, Rank::_5)).unwrap()),
+        sorted(
+            board
+                .possible_moves(Square(File::E, Rank::_5), false)
+                .unwrap()
+        ),
         sorted(vec![
             // rank moves (up-down)
             (File::E, Rank::_2).into(),
@@ -760,4 +902,26 @@ fn test_can_capture() {
     assert!(!board.can_capture(Square(File::B, Rank::_7).index(), BLACK));
     assert!(board.can_capture(Square(File::A, Rank::_1).index(), BLACK));
     assert!(!board.can_capture(Square(File::C, Rank::_6).index(), BLACK));
+}
+
+#[test]
+fn test_checkmate() {
+    let board = Board::empty()
+        .place_piece(ROOK | WHITE, Square(File::A, Rank::_1))
+        .place_piece(ROOK | WHITE, Square(File::B, Rank::_2))
+        .place_piece(KING | BLACK, Square(File::A, Rank::_6));
+
+    assert!(board.checkmate(BLACK).unwrap());
+}
+
+#[test]
+fn test_can_escape_checkmate() {
+    let board = Board::empty()
+        .place_piece(ROOK | WHITE, Square(File::A, Rank::_1))
+        .place_piece(ROOK | WHITE, Square(File::B, Rank::_2))
+        .place_piece(KING | BLACK, Square(File::A, Rank::_6))
+        .place_piece(ROOK | BLACK, Square(File::H, Rank::_5));
+
+    // Rook can intervene on A5
+    assert!(!board.checkmate(BLACK).unwrap());
 }
