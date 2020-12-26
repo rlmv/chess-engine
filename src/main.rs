@@ -189,15 +189,21 @@ impl Board {
         (color & COLOR_MASK) ^ COLOR_MASK
     }
 
-    fn is_in_check(&self, square: usize) -> Result<bool, BoardError> {
-        if self.board[square] & PIECE_MASK != KING {
+    fn is_in_check(&self, king_square: usize) -> Result<bool, BoardError> {
+
+	let king:u8 = self.board[king_square];
+        if king & PIECE_MASK != KING {
             return Err(BoardError::UnexpectedPiece(String::from(
                 "Expected to find king",
             )));
         }
 
+	self.attacked_by_color(king_square, self.opposing_color(king))
+    }
+
+    fn attacked_by_color(&self, square: usize, color: u8) -> Result<bool, BoardError> {
         for (i, _) in self.board.iter().enumerate() {
-            if self.is_occupied_by_color(i, self.opposing_color(self.board[square]))
+            if self.is_occupied_by_color(i, color)
                 && self
                     .possible_moves(Square::from_index(i))?
                     .contains(&Square::from_index(square))
@@ -205,8 +211,7 @@ impl Board {
                 return Ok(true);
             }
         }
-
-        Ok(false)
+	Ok(false)
     }
 
     fn possible_moves(&self, from: Square) -> Result<Vec<Square>, BoardError> {
@@ -214,14 +219,14 @@ impl Board {
         match self.board[Board::square_index(&from)] & PIECE_MASK {
             EMPTY => Err(BoardError::NoPieceOnFromSquare(from)),
             ROOK => Ok(self._rook_moves(from)),
-            KING => Ok(self._king_moves(from)),
+            KING => self._king_moves(from),
             _ => Err(BoardError::NotImplemented),
         }
     }
 
-    fn _king_moves(&self, from: Square) -> Vec<Square> {
+    fn _king_moves(&self, from: Square) -> Result<Vec<Square>, BoardError> {
         let index = Board::square_index(&from);
-        let attacker = self.board[index];
+        let king = self.board[index];
 
         let mut moves: Vec<Square> = Vec::new();
         let move_vectors: Vec<MoveVector> = vec![
@@ -248,8 +253,11 @@ impl Board {
                 // out top of board
             } else if target >= N_SQUARES as i8 {
                 // out bottom
-            } else if self.is_occupied_by_color(target as usize, attacker) { // TODO usize cast is bad
-                 // cannot move into square of own piece
+            } else if self.is_occupied_by_color(target as usize, king) { // TODO usize cast is bad
+                // cannot move into square of own piece
+	    } else if self.attacked_by_color(target as usize, self.opposing_color(king))? { // TODO usize cast is bad
+                // cannot move into check
+		// TODO: this blows the stack because of recursive calls
             } else {
                 moves.push(Square::from_index(target as usize));
             }
@@ -257,7 +265,7 @@ impl Board {
 
         // TODO: ensure that king cannot move into check
 
-        moves
+        Ok(moves)
     }
 
     fn _rook_moves(&self, from: Square) -> Vec<Square> {
@@ -577,6 +585,21 @@ fn test_king_obstructed_movement() {
         ])
     );
 }
+
+#[test]
+fn test_king_cannot_move_into_check() {
+    let board = Board::empty()
+        .place_piece(KING | BLACK, Square(File::A, Rank::_1))
+        .place_piece(ROOK | WHITE, Square(File::C, Rank::_2));	
+
+    assert_eq!(
+        sorted(board.possible_moves(Square(File::A, Rank::_1)).unwrap()),
+        sorted(vec![
+            (File::B, Rank::_1).into(),
+        ])
+    );
+}
+
 
 #[test]
 fn test_king_in_check() {
