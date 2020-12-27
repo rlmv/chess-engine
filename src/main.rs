@@ -1,7 +1,6 @@
 use core::cmp::Ordering;
 use rand::random;
 use std::fmt;
-use std::slice::Iter;
 
 #[derive(Debug)]
 struct Piece(u8, Color);
@@ -93,7 +92,7 @@ const N_SQUARES: usize = N_RANKS * N_FILES;
 enum BoardError {
     NoPieceOnFromSquare(Square),
     NotImplemented,
-    UnexpectedPiece(String),
+    //    UnexpectedPiece(String),
     IllegalState(String),
 }
 
@@ -104,7 +103,7 @@ impl fmt::Display for BoardError {
                 write!(f, "Square {:?} does not have a piece", square)
             }
             BoardError::NotImplemented => write!(f, "Missing implementation"),
-            BoardError::UnexpectedPiece(msg) => write!(f, "{}", msg),
+            //            BoardError::UnexpectedPiece(msg) => write!(f, "{}", msg),
             BoardError::IllegalState(msg) => write!(f, "{}", msg),
         }
     }
@@ -170,14 +169,24 @@ const FILES: [File; 8] = [
     File::H,
 ];
 
-#[derive(Clone)]
+#[derive(Copy, Clone)]
 struct Board {
     board: [u8; 64],
+    color_to_move: Color,
 }
 
 impl Board {
-    fn empty() -> Board {
-        Board { board: [EMPTY; 64] }
+    fn empty() -> Self {
+        Board {
+            board: [EMPTY; 64],
+            color_to_move: WHITE,
+        }
+    }
+
+    fn with_color_to_move(&self, color: Color) -> Self {
+        let mut new = self.clone();
+        new.color_to_move = color;
+        new
     }
 
     /*
@@ -244,17 +253,16 @@ impl Board {
         Ok(new)
     }
 
-    // tODO: color
     fn is_occupied(&self, square: usize) -> bool {
-        self.board[square] & PIECE_MASK != 0
+        Piece::from(self.board[square]).is_some()
     }
 
     fn is_empty(&self, square: usize) -> bool {
-        self.board[square] & PIECE_MASK == 0
+        Piece::from(self.board[square]).is_none()
     }
 
     fn can_capture(&self, target: usize, attacker: Color) -> bool {
-        self.is_occupied(target) && Color::from(self.board[target]).opposite() == attacker
+        self.is_occupied_by_color(target, attacker.opposite())
     }
 
     fn is_occupied_by_color(&self, square: usize, color: Color) -> bool {
@@ -492,7 +500,7 @@ impl Board {
         pieces
     }
 
-    fn find_next_move(&self, color: Color) -> Result<Option<Move>, BoardError> {
+    fn find_next_move(&self) -> Result<Option<Move>, BoardError> {
         // Find all pieces
         // Generate all valid moves for those pieces.
         // After each move, must not be in check - prune.
@@ -502,7 +510,7 @@ impl Board {
         // Evaluate checkmate?
         // Evaluate stalemate?
 
-        let pieces = self.all_pieces_of_color(color);
+        let pieces = self.all_pieces_of_color(self.color_to_move);
 
         let mut valid_moves: Vec<Move> = Vec::new();
 
@@ -518,24 +526,24 @@ impl Board {
                 let moved_board = self.clone().move_piece(*square, to_square)?;
 
                 // Cannot move into check
-                if !moved_board.is_in_check(color)? {
+                if !moved_board.is_in_check(self.color_to_move)? {
                     valid_moves.push(Move {
                         from: *square,
                         to: to_square,
-                        score: moved_board.compute_score(color)?,
+                        score: moved_board.evaluate_position(self.color_to_move)?,
                     })
                 }
             }
         }
 
-        // Find best move<
+        // Find best move
         Ok(valid_moves.iter().max_by_key(|m| m.score).map(|m| *m))
     }
 
     /**
      * Evaluate the position for the given color.
      */
-    fn compute_score(&self, color: Color) -> Result<i32, BoardError> {
+    fn evaluate_position(&self, color: Color) -> Result<i32, BoardError> {
         if self.checkmate(color.opposite())? {
             Ok(i32::MAX)
         } else {
@@ -725,7 +733,7 @@ fn main() {
         .place_piece(Piece(KING, BLACK), Square::new(File::E, Rank::_8));
 
     println!("{}", b2);
-    println!("{:?}", b2.find_next_move(WHITE).unwrap());
+    println!("{:?}", b2.find_next_move().unwrap());
 }
 
 fn sorted(mut v: Vec<Square>) -> Vec<Square> {
@@ -1027,6 +1035,7 @@ fn test_can_escape_checkmate() {
 #[test]
 fn test_checkmate_opponent() {
     let board = Board::empty()
+        .with_color_to_move(WHITE)
         .place_piece(Piece(KING, WHITE), Square(File::H, Rank::_8))
         .place_piece(Piece(ROOK, WHITE), Square(File::C, Rank::_1))
         .place_piece(Piece(ROOK, WHITE), Square(File::B, Rank::_2))
@@ -1034,7 +1043,7 @@ fn test_checkmate_opponent() {
 
     println!("{}", board);
 
-    let mv = board.find_next_move(WHITE).unwrap().unwrap();
+    let mv = board.find_next_move().unwrap().unwrap();
 
     assert_eq!(mv.from, Square(File::C, Rank::_1));
     assert_eq!(mv.to, Square(File::A, Rank::_1));
