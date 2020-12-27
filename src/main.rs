@@ -545,6 +545,7 @@ impl Board {
      */
     fn evaluate_position(&self, color: Color) -> Result<i32, BoardError> {
         if self.checkmate(color.opposite())? {
+            println!("Found checkmate");
             Ok(i32::MAX)
         } else {
             Ok(random::<i8>() as i32)
@@ -1033,7 +1034,7 @@ fn test_can_escape_checkmate() {
 }
 
 #[test]
-fn test_checkmate_opponent() {
+fn test_checkmate_opponent_twin_rooks() {
     let board = Board::empty()
         .with_color_to_move(WHITE)
         .place_piece(Piece(KING, WHITE), Square(File::H, Rank::_8))
@@ -1047,4 +1048,20 @@ fn test_checkmate_opponent() {
 
     assert_eq!(mv.from, Square(File::C, Rank::_1));
     assert_eq!(mv.to, Square(File::A, Rank::_1));
+}
+
+#[test]
+fn test_checkmate_opponent_king_and_rook() {
+    let board = Board::empty()
+        .with_color_to_move(WHITE)
+        .place_piece(Piece(KING, WHITE), Square(File::B, Rank::_6))
+        .place_piece(Piece(ROOK, WHITE), Square(File::C, Rank::_1))
+        .place_piece(Piece(KING, BLACK), Square(File::A, Rank::_8));
+
+    println!("{}", board);
+
+    let mv = board.find_next_move().unwrap().unwrap();
+
+    assert_eq!(mv.from, Square(File::C, Rank::_1));
+    assert_eq!(mv.to, Square(File::C, Rank::_8));
 }
