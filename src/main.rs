@@ -388,9 +388,10 @@ impl Board {
 
         // side-to-side
 
-        let mut target = index - 1;
+        let mut target = index;
 
-        while target % N_FILES != (N_FILES - 1) {
+        while target > 0 && (target - 1) % N_FILES != (N_FILES - 1) {
+            target -= 1; // go back a file	    
             if self.is_occupied_by_color(target, attacker.color()) {
                 break;
             } else if self.can_capture(target, attacker.color()) {
@@ -398,12 +399,6 @@ impl Board {
                 break;
             } else {
                 maybe_moves.push(Square::from_index(target));
-
-                if target != 0 {
-                    target -= 1; // go back a file
-                } else {
-                    break; // avoid underflow
-                }
             }
         }
 
@@ -912,6 +907,32 @@ fn test_rook_free_movement() {
             (File::H, Rank::_6).into(),
         ])
     );
+}
+
+#[test]
+fn test_rook_boundary_conditions() {
+    let board = Board::empty().place_piece(Piece(ROOK, WHITE), Square(File::A, Rank::_8));
+
+    assert_eq!(
+        sorted(
+            board
+                .possible_moves(Square(File::A, Rank::_8), false)
+                .unwrap()
+        ),
+        sorted(
+            RANKS
+                .iter()
+                .filter(|r| **r != Rank::_8)
+                .map(|r| Square(File::A, *r))
+                .chain(
+                    FILES
+                        .iter()
+                        .filter(|f| **f != File::A)
+                        .map(|f| Square(*f, Rank::_8))
+                )
+                .collect()
+        )
+    )
 }
 
 #[test]
