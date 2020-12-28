@@ -96,6 +96,8 @@ const N_RANKS: usize = 8;
 const N_FILES: usize = 8;
 const N_SQUARES: usize = N_RANKS * N_FILES;
 
+type Result<T> = std::result::Result<T, BoardError>;
+
 #[derive(Debug)]
 enum BoardError {
     NoPieceOnFromSquare(Square),
@@ -315,7 +317,7 @@ impl Board {
         new
     }
 
-    fn move_piece(&self, from: Square, to: Square) -> Result<Board, BoardError> {
+    fn move_piece(&self, from: Square, to: Square) -> Result<Board> {
         let mut new = self.clone();
 
         let i = Board::square_index(&from);
@@ -349,7 +351,7 @@ impl Board {
         }
     }
 
-    fn is_in_check(&self, color: Color) -> Result<bool, BoardError> {
+    fn is_in_check(&self, color: Color) -> Result<bool> {
         let all_pieces = self.all_pieces_of_color(color);
 
         let kings: Vec<&(Piece, Square)> = all_pieces
@@ -376,7 +378,7 @@ impl Board {
     }
 
     // attacking moves is a subset of other moves -
-    fn attacked_by_color(&self, square: usize, color: Color) -> Result<bool, BoardError> {
+    fn attacked_by_color(&self, square: usize, color: Color) -> Result<bool> {
         for (i, _) in self.board.iter().enumerate() {
             if self.is_occupied_by_color(i, color)
                 && self
@@ -393,7 +395,7 @@ impl Board {
         &self,
         from: Square,
         ignore_king_jeopardy: bool,
-    ) -> Result<Vec<Square>, BoardError> {
+    ) -> Result<Vec<Square>> {
         // TODO: check color, turn
 
         match Piece::from(self.board[Board::square_index(&from)]) {
@@ -413,7 +415,7 @@ impl Board {
         from: Square,
         king: Piece,
         ignore_king_jeopardy: bool,
-    ) -> Result<Vec<Square>, BoardError> {
+    ) -> Result<Vec<Square>> {
         let index = Board::square_index(&from);
         let mut moves: Vec<Square> = Vec::new();
         let move_vectors: Vec<MoveVector> = vec![
@@ -517,7 +519,7 @@ impl Board {
         pieces
     }
 
-    fn find_next_move(&self) -> Result<Option<Move>, BoardError> {
+    fn find_next_move(&self) -> Result<Option<Move>> {
         // Find all pieces
         // Generate all valid moves for those pieces.
         // After each move, must not be in check - prune.
@@ -560,7 +562,7 @@ impl Board {
     /**
      * Evaluate the position for the given color.
      */
-    fn evaluate_position(&self, color: Color) -> Result<i32, BoardError> {
+    fn evaluate_position(&self, color: Color) -> Result<i32> {
         if self.checkmate(color.opposite())? {
             println!("Found checkmate");
             Ok(i32::MAX)
@@ -569,7 +571,7 @@ impl Board {
         }
     }
 
-    fn checkmate(&self, color: Color) -> Result<bool, BoardError> {
+    fn checkmate(&self, color: Color) -> Result<bool> {
         if !self.is_in_check(color)? {
             return Ok(false);
         }
@@ -686,7 +688,7 @@ impl From<(File, Rank)> for Square {
 impl TryFrom<&str> for Square {
     type Error = BoardError;
 
-    fn try_from(s: &str) -> Result<Self, Self::Error> {
+    fn try_from(s: &str) -> Result<Self> {
         let re = Regex::new(r"^([A-H])([1-8])$")?;
 
         let capture = match re.captures_iter(s).next() {
