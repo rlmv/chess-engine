@@ -6,7 +6,6 @@ use std::fmt;
 /*
  * TODO:
  *
- * - refactor board to align Y-axis to match (x, y) coordinate system: A1 is index 0.
  * - min-max optimization
  * - implement other pieces
  */
@@ -144,28 +143,28 @@ impl Rank {
     fn index(&self) -> u8 {
         use Rank::*;
         match self {
-            _1 => 7,
-            _2 => 6,
-            _3 => 5,
-            _4 => 4,
-            _5 => 3,
-            _6 => 2,
-            _7 => 1,
-            _8 => 0,
+            _1 => 0,
+            _2 => 1,
+            _3 => 2,
+            _4 => 3,
+            _5 => 4,
+            _6 => 5,
+            _7 => 6,
+            _8 => 7,
         }
     }
 
     fn from_index(i: usize) -> Self {
         use Rank::*;
         match i / N_RANKS {
-            7 => _1,
-            6 => _2,
-            5 => _3,
-            4 => _4,
-            3 => _5,
-            2 => _6,
-            1 => _7,
-            0 => _8,
+            0 => _1,
+            1 => _2,
+            2 => _3,
+            3 => _4,
+            4 => _5,
+            5 => _6,
+            6 => _7,
+            7 => _8,
             _ => panic!("Unknown rank"),
         }
     }
@@ -306,10 +305,6 @@ impl Board {
      */
     fn square_index(of: &Square) -> usize {
         let &Square(file, rank) = &of;
-        Board::index(file, rank)
-    }
-
-    fn index(file: &File, rank: &Rank) -> usize {
         (rank.index() * 8 + file.index()).into()
     }
 
@@ -442,9 +437,9 @@ impl Board {
             } else if x == 1 && target % N_FILES as i8 == 0 {
                 // ignore: wrap around to right
             } else if target < 0 {
-                // out top of board
+                // out bottom of board
             } else if target >= N_SQUARES as i8 {
-                // out bottom
+                // out top
             } else if self.is_occupied_by_color(target as usize, king.color()) { // TODO usize cast is bad
                  // cannot move into square of own piece
             } else if !ignore_king_jeopardy
@@ -480,10 +475,10 @@ impl Board {
                 let target = signed_index + (m as i8 * x) + (m as i8 * y * N_FILES as i8);
 
                 if target >= N_SQUARES as i8 {
-                    // off bottom of board
+                    // off top of board
                     break;
                 } else if target < 0 {
-                    // out top of board
+                    // out bottom of board
                     break;
                 } else if *x == -1 && target % N_FILES as i8 == N_FILES as i8 - 1 {
                     // wrap around to left
@@ -605,6 +600,32 @@ impl Board {
     }
 }
 
+impl fmt::Display for Board {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for rank in RANKS.iter().rev() {
+            write!(f, "{} ", rank)?;
+
+            for file in FILES.iter() {
+                let piece: Option<Piece> =
+                    Piece::from(self.board[Square::new(*file, *rank).index()]);
+
+                let symbol = match piece {
+                    Some(piece) => square_symbol(&piece),
+                    None => ' ',
+                };
+                write!(f, "{} ", symbol)?;
+            }
+            write!(f, "\n")?;
+        }
+
+        for c in vec![' ', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'] {
+            write!(f, "{} ", c)?;
+        }
+
+        fmt::Result::Ok(())
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 struct Move {
     from: Square,
@@ -695,31 +716,6 @@ impl fmt::Display for Square {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let Square(file, rank) = self;
         write!(f, "{}{}", file, rank)
-    }
-}
-
-impl fmt::Display for Board {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for rank in RANKS.iter().rev() {
-            write!(f, "{} ", rank)?;
-
-            for file in FILES.iter() {
-                let piece: Option<Piece> = Piece::from(self.board[Board::index(file, rank)]);
-
-                let symbol = match piece {
-                    Some(piece) => square_symbol(&piece),
-                    None => ' ',
-                };
-                write!(f, "{} ", symbol)?;
-            }
-            write!(f, "\n")?;
-        }
-
-        for c in vec![' ', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'] {
-            write!(f, "{} ", c)?;
-        }
-
-        fmt::Result::Ok(())
     }
 }
 
