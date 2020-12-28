@@ -101,21 +101,19 @@ const N_SQUARES: usize = N_RANKS * N_FILES;
 enum BoardError {
     NoPieceOnFromSquare(Square),
     NotImplemented,
-    //    UnexpectedPiece(String),
     IllegalState(String),
     ParseError(String),
 }
+use BoardError::*;
 
 impl fmt::Display for BoardError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use BoardError::*;
         match self {
-            BoardError::NoPieceOnFromSquare(square) => {
+            NoPieceOnFromSquare(square) => {
                 write!(f, "Square {:?} does not have a piece", square)
             }
-            BoardError::NotImplemented => write!(f, "Missing implementation"),
-            //            BoardError::UnexpectedPiece(msg) => write!(f, "{}", msg),
-            BoardError::IllegalState(msg) => write!(f, "{}", msg),
+            NotImplemented => write!(f, "Missing implementation"),
+            IllegalState(msg) => write!(f, "{}", msg),
             ParseError(msg) => write!(f, "{}", msg),
         }
     }
@@ -145,7 +143,6 @@ enum Rank {
 impl Rank {
     fn index(&self) -> u8 {
         use Rank::*;
-
         match self {
             _1 => 7,
             _2 => 6,
@@ -330,7 +327,7 @@ impl Board {
         let j = Board::square_index(&to);
 
         if new.board[i] & PIECE_MASK == EMPTY {
-            return Err(BoardError::NoPieceOnFromSquare(from));
+            return Err(NoPieceOnFromSquare(from));
         }
 
         new.board[j] = new.board[i];
@@ -366,12 +363,12 @@ impl Board {
             .collect();
 
         if kings.len() == 0 {
-            return Err(BoardError::IllegalState(format!(
+            return Err(IllegalState(format!(
                 "Board is missing KING of color {}",
                 color
             )));
         } else if kings.len() > 1 {
-            return Err(BoardError::IllegalState(format!(
+            return Err(IllegalState(format!(
                 "Board has {} KINGs of color {}",
                 kings.len(),
                 color
@@ -405,10 +402,10 @@ impl Board {
         // TODO: check color, turn
 
         match Piece::from(self.board[Board::square_index(&from)]) {
-            None => Err(BoardError::NoPieceOnFromSquare(from)),
+            None => Err(NoPieceOnFromSquare(from)),
             Some(p) if p.piece() == ROOK => Ok(self._rook_moves(from, p)),
             Some(p) if p.piece() == KING => self._king_moves(from, p, ignore_king_jeopardy),
-            _ => Err(BoardError::NotImplemented),
+            _ => Err(NotImplemented),
         }
     }
 
@@ -673,12 +670,7 @@ impl TryFrom<&str> for Square {
 
         let capture = match re.captures_iter(s).next() {
             Some(capture) => capture,
-            None => {
-                return Err(BoardError::ParseError(format!(
-                    "Could not parse {} as a square",
-                    s
-                )))
-            }
+            None => return Err(ParseError(format!("Could not parse {} as a square", s))),
         };
         Ok(Square::new(
             File::from_str(&capture[1]),
