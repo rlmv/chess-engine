@@ -329,6 +329,7 @@ impl Board {
 
         new.board[j] = new.board[i];
         new.board[i] = EMPTY;
+        new.color_to_move = self.color_to_move.opposite();
         Ok(new)
     }
 
@@ -391,11 +392,7 @@ impl Board {
         Ok(false)
     }
 
-    fn possible_moves(
-        &self,
-        from: Square,
-        ignore_king_jeopardy: bool,
-    ) -> Result<Vec<Square>> {
+    fn possible_moves(&self, from: Square, ignore_king_jeopardy: bool) -> Result<Vec<Square>> {
         // TODO: check color, turn
 
         match Piece::from(self.board[Board::square_index(&from)]) {
@@ -519,15 +516,16 @@ impl Board {
         pieces
     }
 
-    fn find_next_move(&self) -> Result<Option<Move>> {
+    fn find_next_move(&self, depth: u8) -> Result<Option<Move>> {
         // Find all pieces
         // Generate all valid moves for those pieces.
         // After each move, must not be in check - prune.
         // Make each move - evaluate the position.
         // Pick highest scoring move
 
-        // Evaluate checkmate?
         // Evaluate stalemate?
+
+        assert!(depth > 0);
 
         let pieces = self.all_pieces_of_color(self.color_to_move);
 
@@ -536,7 +534,8 @@ impl Board {
         for (piece, square) in pieces.iter() {
             for to_square in self.possible_moves(*square, false)? {
                 println!(
-                    "Evaluating move {} from {} to {}",
+                    "{}: Evaluating move {} from {} to {}",
+                    self.color_to_move,
                     square_symbol(piece),
                     square,
                     to_square
@@ -544,30 +543,56 @@ impl Board {
 
                 let moved_board = self.clone().move_piece(*square, to_square)?;
 
-                // Cannot move into check
-                if !moved_board.is_in_check(self.color_to_move)? {
-                    valid_moves.push(Move {
-                        from: *square,
-                        to: to_square,
-                        score: moved_board.evaluate_position(self.color_to_move)?,
-                    })
+                // Cannot move into check. This helps verify that the position
+                // is not checkmate: if the recursive call below returns no
+                // moves then the position is mate
+                if moved_board.is_in_check(self.color_to_move)? {
+                    continue;
                 }
+
+                // TODO: adjust the above for stalemate
+
+                // Evaluate board score at leaf nodes
+                let score = if depth == 1 {
+                    moved_board.evaluate_position()?
+                } else {
+                    match (moved_board.find_next_move(depth - 1)?, self.color_to_move) {
+                        (Some(mv), _) => mv.score,
+                        // No moves, checkmate
+                        (None, WHITE) => i32::MAX,
+                        (None, BLACK) => i32::MIN,
+                    }
+                };
+
+                valid_moves.push(Move {
+                    from: *square,
+                    to: to_square,
+                    score: score,
+                })
             }
         }
 
         // Find best move
-        Ok(valid_moves.iter().max_by_key(|m| m.score).map(|m| *m))
+        match self.color_to_move {
+            WHITE => Ok(valid_moves.iter().max_by_key(|m| m.score).map(|m| *m)),
+            BLACK => Ok(valid_moves.iter().min_by_key(|m| m.score).map(|m| *m)),
+        }
     }
 
-    /**
+    /*
      * Evaluate the position for the given color.
+     *
+     * Positive values favor white, negative favor black.
      */
-    fn evaluate_position(&self, color: Color) -> Result<i32> {
-        if self.checkmate(color.opposite())? {
-            println!("Found checkmate");
+    fn evaluate_position(&self) -> Result<i32> {
+        if self.checkmate(BLACK)? {
+            println!("Found checkmate of {}", BLACK);
             Ok(i32::MAX)
+        } else if self.checkmate(WHITE)? {
+            println!("Found checkmate of {}", WHITE);
+            Ok(i32::MIN)
         } else {
-            Ok(random::<i8>() as i32)
+            Ok(0)
         }
     }
 
@@ -580,15 +605,8 @@ impl Board {
 
         let pieces = self.all_pieces_of_color(color);
 
-        for (piece, square) in pieces.iter() {
+        for (_, square) in pieces.iter() {
             for to_square in self.possible_moves(*square, false)? {
-                println!(
-                    "Evaluating move {} from {} to {}",
-                    square_symbol(piece),
-                    square,
-                    to_square
-                );
-
                 let moved_board = self.clone().move_piece(square.clone(), to_square)?;
 
                 // At least one way out!
@@ -747,7 +765,7 @@ fn main() {
         .place_piece(Piece(KING, BLACK), Square::new(File::E, Rank::_8));
 
     println!("{}", b2);
-    println!("{:?}", b2.find_next_move().unwrap());
+    println!("{:?}", b2.find_next_move(1).unwrap());
 }
 
 #[cfg(test)]
@@ -759,6 +777,20 @@ fn sorted(mut v: Vec<Square>) -> Vec<Square> {
 #[cfg(test)]
 fn square(s: &str) -> Square {
     Square::try_from(s).unwrap()
+}
+
+#[test]
+fn test_parse_square() {
+    assert_eq!(Square::try_from("A1").unwrap(), Square(File::A, Rank::_1));
+    assert_eq!(Square::try_from("B2").unwrap(), Square(File::B, Rank::_2));
+    assert_eq!(Square::try_from("C3").unwrap(), Square(File::C, Rank::_3));
+    assert_eq!(Square::try_from("D4").unwrap(), Square(File::D, Rank::_4));
+    assert_eq!(Square::try_from("E5").unwrap(), Square(File::E, Rank::_5));
+    assert_eq!(Square::try_from("F6").unwrap(), Square(File::F, Rank::_6));
+    assert_eq!(Square::try_from("G7").unwrap(), Square(File::G, Rank::_7));
+    assert_eq!(Square::try_from("H8").unwrap(), Square(File::H, Rank::_8));
+
+    assert!(Square::try_from("I8").is_err());
 }
 
 #[test]
@@ -1089,7 +1121,7 @@ fn test_checkmate_opponent_twin_rooks() {
 
     println!("{}", board);
 
-    let mv = board.find_next_move().unwrap().unwrap();
+    let mv = board.find_next_move(1).unwrap().unwrap();
 
     assert_eq!(mv.from, Square(File::C, Rank::_1));
     assert_eq!(mv.to, Square(File::A, Rank::_1));
@@ -1105,22 +1137,68 @@ fn test_checkmate_opponent_king_and_rook() {
 
     println!("{}", board);
 
-    let mv = board.find_next_move().unwrap().unwrap();
+    let mv = board.find_next_move(1).unwrap().unwrap();
 
     assert_eq!(mv.from, Square(File::C, Rank::_1));
     assert_eq!(mv.to, Square(File::C, Rank::_8));
 }
 
 #[test]
-fn test_parse_square() {
-    assert_eq!(Square::try_from("A1").unwrap(), Square(File::A, Rank::_1));
-    assert_eq!(Square::try_from("B2").unwrap(), Square(File::B, Rank::_2));
-    assert_eq!(Square::try_from("C3").unwrap(), Square(File::C, Rank::_3));
-    assert_eq!(Square::try_from("D4").unwrap(), Square(File::D, Rank::_4));
-    assert_eq!(Square::try_from("E5").unwrap(), Square(File::E, Rank::_5));
-    assert_eq!(Square::try_from("F6").unwrap(), Square(File::F, Rank::_6));
-    assert_eq!(Square::try_from("G7").unwrap(), Square(File::G, Rank::_7));
-    assert_eq!(Square::try_from("H8").unwrap(), Square(File::H, Rank::_8));
+fn test_checkmate_opponent_king_and_rook_2_moves() {
+    let board1 = Board::empty()
+        .with_color_to_move(WHITE)
+        .place_piece(Piece(KING, WHITE), square("A1"))
+        .place_piece(Piece(ROOK, WHITE), square("A7"))
+        .place_piece(Piece(ROOK, WHITE), square("B7"))
+        .place_piece(Piece(KING, BLACK), square("H8"))
+        .place_piece(Piece(ROOK, BLACK), square("F8"));
 
-    assert!(Square::try_from("I8").is_err());
+    let mv = board1.find_next_move(3).unwrap().unwrap();
+    assert_eq!((mv.from, mv.to), (square("B7"), square("H7")));
+
+    let board2 = board1.move_piece(mv.from, mv.to).unwrap();
+
+    // Only move available
+    let board3 = board2.move_piece(square("H8"), square("G8")).unwrap();
+
+    let mv3 = board3.find_next_move(3).unwrap().unwrap();
+    assert_eq!((mv3.from, mv3.to), (square("A7"), square("G7")));
+
+    let board4 = board3.move_piece(mv3.from, mv3.to).unwrap();
+    assert!(board4.checkmate(BLACK).unwrap());
+
+    println!("{}", board1);
+    println!("{}", board2);
+    println!("{}", board3);
+    println!("{}", board4);
+}
+
+#[test]
+fn test_checkmate_opponent_king_and_rook_2_moves_black_to_move() {
+    let board1 = Board::empty()
+        .with_color_to_move(BLACK)
+        .place_piece(Piece(KING, BLACK), square("A1"))
+        .place_piece(Piece(ROOK, BLACK), square("A7"))
+        .place_piece(Piece(ROOK, BLACK), square("B7"))
+        .place_piece(Piece(KING, WHITE), square("H8"))
+        .place_piece(Piece(ROOK, WHITE), square("F8"));
+
+    let mv = board1.find_next_move(3).unwrap().unwrap();
+    assert_eq!((mv.from, mv.to), (square("B7"), square("H7")));
+
+    let board2 = board1.move_piece(mv.from, mv.to).unwrap();
+
+    // Only move available
+    let board3 = board2.move_piece(square("H8"), square("G8")).unwrap();
+
+    let mv3 = board3.find_next_move(3).unwrap().unwrap();
+    assert_eq!((mv3.from, mv3.to), (square("A7"), square("G7")));
+
+    let board4 = board3.move_piece(mv3.from, mv3.to).unwrap();
+    assert!(board4.checkmate(WHITE).unwrap());
+
+    println!("{}", board1);
+    println!("{}", board2);
+    println!("{}", board3);
+    println!("{}", board4);
 }
