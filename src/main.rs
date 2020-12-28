@@ -1,6 +1,15 @@
 use core::cmp::Ordering;
 use rand::random;
+use regex::Regex;
+use std::convert::TryFrom;
 use std::fmt;
+/*
+ * TODO:
+ *
+ * - refactor board to align Y-axis to match (x, y) coordinate system: A1 is index 0.
+ * - min-max optimization
+ * - implement other pieces
+ */
 
 #[derive(Debug)]
 struct Piece(u8, Color);
@@ -94,10 +103,12 @@ enum BoardError {
     NotImplemented,
     //    UnexpectedPiece(String),
     IllegalState(String),
+    ParseError(String),
 }
 
 impl fmt::Display for BoardError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use BoardError::*;
         match self {
             BoardError::NoPieceOnFromSquare(square) => {
                 write!(f, "Square {:?} does not have a piece", square)
@@ -105,7 +116,15 @@ impl fmt::Display for BoardError {
             BoardError::NotImplemented => write!(f, "Missing implementation"),
             //            BoardError::UnexpectedPiece(msg) => write!(f, "{}", msg),
             BoardError::IllegalState(msg) => write!(f, "{}", msg),
+            ParseError(msg) => write!(f, "{}", msg),
         }
+    }
+}
+
+impl From<regex::Error> for BoardError {
+    // TODO: chain errors
+    fn from(re: regex::Error) -> Self {
+        BoardError::ParseError(format!("{:?}", re))
     }
 }
 
@@ -121,6 +140,53 @@ enum Rank {
     _6,
     _7,
     _8,
+}
+
+impl Rank {
+    fn index(&self) -> u8 {
+        use Rank::*;
+
+        match self {
+            _1 => 7,
+            _2 => 6,
+            _3 => 5,
+            _4 => 4,
+            _5 => 3,
+            _6 => 2,
+            _7 => 1,
+            _8 => 0,
+        }
+    }
+
+    fn from_index(i: usize) -> Self {
+        use Rank::*;
+        match i / N_RANKS {
+            7 => _1,
+            6 => _2,
+            5 => _3,
+            4 => _4,
+            3 => _5,
+            2 => _6,
+            1 => _7,
+            0 => _8,
+            _ => panic!("Unknown rank"),
+        }
+    }
+
+    fn from_str(s: &str) -> Self {
+        use Rank::*;
+        match s {
+            "1" => _1,
+            "2" => _2,
+            "3" => _3,
+            "4" => _4,
+            "5" => _5,
+            "6" => _6,
+            "7" => _7,
+            "8" => _8,
+            _ => panic!("Unknown rank"),
+        }
+    }
 }
 
 impl fmt::Display for Rank {
@@ -150,6 +216,55 @@ enum File {
     F,
     G,
     H,
+}
+
+impl File {
+    fn index(&self) -> u8 {
+        use File::*;
+
+        match self {
+            A => 0,
+            B => 1,
+            C => 2,
+            D => 3,
+            E => 4,
+            F => 5,
+            G => 6,
+            H => 7,
+        }
+    }
+
+    fn from_index(i: usize) -> Self {
+        use File::*;
+
+        match i % N_FILES {
+            0 => A,
+            1 => B,
+            2 => C,
+            3 => D,
+            4 => E,
+            5 => F,
+            6 => G,
+            7 => H,
+            _ => panic!("Unknown file"),
+        }
+    }
+
+    fn from_str(s: &str) -> Self {
+        use File::*;
+
+        match s {
+            "A" => A,
+            "B" => B,
+            "C" => C,
+            "D" => D,
+            "E" => E,
+            "F" => F,
+            "G" => G,
+            "H" => H,
+            _ => panic!("Unknown file"),
+        }
+    }
 }
 
 impl fmt::Display for File {
@@ -198,37 +313,7 @@ impl Board {
     }
 
     fn index(file: &File, rank: &Rank) -> usize {
-        (Board::rank_index(rank) * 8 + Board::file_index(file)).into()
-    }
-
-    fn rank_index(rank: &Rank) -> u8 {
-        use Rank::*;
-
-        match rank {
-            _1 => 7,
-            _2 => 6,
-            _3 => 5,
-            _4 => 4,
-            _5 => 3,
-            _6 => 2,
-            _7 => 1,
-            _8 => 0,
-        }
-    }
-
-    fn file_index(file: &File) -> u8 {
-        use File::*;
-
-        match file {
-            A => 0,
-            B => 1,
-            C => 2,
-            D => 3,
-            E => 4,
-            F => 5,
-            G => 6,
-            H => 7,
-        }
+        (rank.index() * 8 + file.index()).into()
     }
 
     fn place_piece(&self, piece: Piece, on: Square) -> Board {
@@ -386,14 +471,14 @@ impl Board {
 
         let mut maybe_moves: Vec<Square> = Vec::new();
 
-        let move_vectors: Vec<MoveVector> = vec![(1, 0), (0, -1), (-1, 0), (0, 1)];
+        let move_vectors: [MoveVector; 4] = [(1, 0), (0, -1), (-1, 0), (0, 1)];
 
         const MAX_MAGNITUDE: u8 = 7;
 
         let signed_index = index as i8;
 
         // Iterate allowed vectors, scaling by all possible magnitudes
-        for (x, y) in move_vectors {
+        for (x, y) in move_vectors.iter() {
             for m in 1..=MAX_MAGNITUDE {
                 let target = signed_index + (m as i8 * x) + (m as i8 * y * N_FILES as i8);
 
@@ -403,10 +488,10 @@ impl Board {
                 } else if target < 0 {
                     // out top of board
                     break;
-                } else if x == -1 && target % N_FILES as i8 == N_FILES as i8 - 1 {
+                } else if *x == -1 && target % N_FILES as i8 == N_FILES as i8 - 1 {
                     // wrap around to left
                     break;
-                } else if x == 1 && target % N_FILES as i8 == 0 {
+                } else if *x == 1 && target % N_FILES as i8 == 0 {
                     // wrap to right
                     break;
                 } else if self.is_occupied_by_color(target as usize, attacker.color()) {
@@ -559,36 +644,12 @@ impl Square {
     }
 
     fn from_index(i: usize) -> Square {
-        use File::*;
-        use Rank::*;
-
         if i >= N_SQUARES {
             panic!("Square index {} is larger than max {}", i, N_SQUARES);
         }
 
-        let rank = match i / N_RANKS {
-            7 => _1,
-            6 => _2,
-            5 => _3,
-            4 => _4,
-            3 => _5,
-            2 => _6,
-            1 => _7,
-            0 => _8,
-            _ => panic!("Unknown rank"),
-        };
-
-        let file = match i % N_FILES {
-            0 => A,
-            1 => B,
-            2 => C,
-            3 => D,
-            4 => E,
-            5 => F,
-            6 => G,
-            7 => H,
-            _ => panic!("Unknown file"),
-        };
+        let rank = Rank::from_index(i);
+        let file = File::from_index(i);
 
         Square::new(file, rank)
     }
@@ -601,6 +662,28 @@ impl Square {
 impl From<(File, Rank)> for Square {
     fn from((file, rank): (File, Rank)) -> Self {
         Square::new(file, rank)
+    }
+}
+
+impl TryFrom<&str> for Square {
+    type Error = BoardError;
+
+    fn try_from(s: &str) -> Result<Self, Self::Error> {
+        let re = Regex::new(r"^([A-H])([1-8])$")?;
+
+        let capture = match re.captures_iter(s).next() {
+            Some(capture) => capture,
+            None => {
+                return Err(BoardError::ParseError(format!(
+                    "Could not parse {} as a square",
+                    s
+                )))
+            }
+        };
+        Ok(Square::new(
+            File::from_str(&capture[1]),
+            Rank::from_str(&capture[2]),
+        ))
     }
 }
 
@@ -677,9 +760,15 @@ fn main() {
     println!("{:?}", b2.find_next_move().unwrap());
 }
 
+#[cfg(test)]
 fn sorted(mut v: Vec<Square>) -> Vec<Square> {
     v.sort();
     v
+}
+
+#[cfg(test)]
+fn square(s: &str) -> Square {
+    Square::try_from(s).unwrap()
 }
 
 #[test]
@@ -1030,4 +1119,18 @@ fn test_checkmate_opponent_king_and_rook() {
 
     assert_eq!(mv.from, Square(File::C, Rank::_1));
     assert_eq!(mv.to, Square(File::C, Rank::_8));
+}
+
+#[test]
+fn test_parse_square() {
+    assert_eq!(Square::try_from("A1").unwrap(), Square(File::A, Rank::_1));
+    assert_eq!(Square::try_from("B2").unwrap(), Square(File::B, Rank::_2));
+    assert_eq!(Square::try_from("C3").unwrap(), Square(File::C, Rank::_3));
+    assert_eq!(Square::try_from("D4").unwrap(), Square(File::D, Rank::_4));
+    assert_eq!(Square::try_from("E5").unwrap(), Square(File::E, Rank::_5));
+    assert_eq!(Square::try_from("F6").unwrap(), Square(File::F, Rank::_6));
+    assert_eq!(Square::try_from("G7").unwrap(), Square(File::G, Rank::_7));
+    assert_eq!(Square::try_from("H8").unwrap(), Square(File::H, Rank::_8));
+
+    assert!(Square::try_from("I8").is_err());
 }
