@@ -386,96 +386,41 @@ impl Board {
 
         let mut maybe_moves: Vec<Square> = Vec::new();
 
-        // side-to-side
+        let move_vectors: Vec<MoveVector> = vec![(1, 0), (0, -1), (-1, 0), (0, 1)];
 
-        let mut target = index;
+        const MAX_MAGNITUDE: u8 = 7;
 
-        while target > 0 && (target - 1) % N_FILES != (N_FILES - 1) {
-            target -= 1; // go back a file	    
-            if self.is_occupied_by_color(target, attacker.color()) {
-                break;
-            } else if self.can_capture(target, attacker.color()) {
-                maybe_moves.push(Square::from_index(target));
-                break;
-            } else {
-                maybe_moves.push(Square::from_index(target));
+        let signed_index = index as i8;
+
+        // Iterate allowed vectors, scaling by all possible magnitudes
+        for (x, y) in move_vectors {
+            for m in 1..=MAX_MAGNITUDE {
+                let target = signed_index + (m as i8 * x) + (m as i8 * y * N_FILES as i8);
+
+                if target >= N_SQUARES as i8 {
+                    // off bottom of board
+                    break;
+                } else if target < 0 {
+                    // out top of board
+                    break;
+                } else if x == -1 && target % N_FILES as i8 == N_FILES as i8 - 1 {
+                    // wrap around to left
+                    break;
+                } else if x == 1 && target % N_FILES as i8 == 0 {
+                    // wrap to right
+                    break;
+                } else if self.is_occupied_by_color(target as usize, attacker.color()) {
+                    // TODO: remove usize cast
+                    break;
+                } else if self.can_capture(target as usize, attacker.color()) {
+                    // TODO: remove usize cast
+                    maybe_moves.push(Square::from_index(target as usize));
+                    break;
+                } else {
+                    maybe_moves.push(Square::from_index(target as usize));
+                }
             }
         }
-
-        target = index + 1;
-        while target % N_FILES != 0 {
-            if self.is_occupied_by_color(target, attacker.color()) {
-                break;
-            } else if self.can_capture(target, attacker.color()) {
-                maybe_moves.push(Square::from_index(target));
-                break;
-            } else {
-                maybe_moves.push(Square::from_index(target));
-                target += 1; //advance a file
-            }
-        }
-
-        target = index;
-        while target >= N_FILES {
-            // avoid underflow
-            target -= N_FILES; // go back a row
-            if self.is_occupied_by_color(target, attacker.color()) {
-                break;
-            } else if self.can_capture(target, attacker.color()) {
-                maybe_moves.push(Square::from_index(target));
-                break;
-            } else {
-                maybe_moves.push(Square::from_index(target));
-            }
-        }
-
-        target = index + N_FILES;
-        while target < N_SQUARES {
-            if self.is_occupied_by_color(target, attacker.color()) {
-                break;
-            } else if self.can_capture(target, attacker.color()) {
-                maybe_moves.push(Square::from_index(target));
-                break;
-            } else {
-                maybe_moves.push(Square::from_index(target));
-                target += N_FILES; // advance a row
-            }
-        }
-
-        // up-down
-        // let mut moves: Vec<Square> = (0..N_RANKS)
-        //     .map(|j| index % N_RANKS + (j * N_FILES)) // enumerate from top of board
-        //     .map(|k| Square::from_index(k))
-        //     .filter(|s| *s != from)
-        //     .collect();
-
-        // // side-to-side
-        // moves.extend(
-        //     (0..N_FILES)
-        //         .map(|j| (index / N_RANKS) * N_FILES + j) // enumerate from beginning of row
-        //         .map(|k| Square::from_index(k))
-        //         .filter(|s| *s != from),
-        // );
-
-        // coordinates
-        // let row = index / N_RANKS;
-        // let col = index % N_RANKS;
-
-        // for j in (1..=col).rev() {
-        //     maybe_moves.push(Square::from_index(index - j));
-        // }
-
-        // for j in (col+1)..8 {
-        //     maybe_moves.push(Square::from_index(index + j));
-        // }
-
-        // up-down
-
-        // for i in (1..=row).rev() {
-        //     maybe_moves.push(Square::from_index(index - ((i * N_FILES))));
-        // }
-
-        // }
 
         maybe_moves
     }
