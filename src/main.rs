@@ -1,8 +1,8 @@
 use core::cmp::Ordering;
+use log::{debug, error, info};
 use regex::Regex;
 use std::convert::TryFrom;
 use std::fmt;
-use log::{debug, error, info};
 
 /*
  * TODO:
@@ -37,6 +37,20 @@ impl Piece {
         let color = Color::from(x);
 
         Some(Piece(x & PIECE_MASK, color))
+    }
+
+    // Relative values of each piece
+    fn value(&self) -> i32 {
+        let Piece(piece, _) = *self;
+        match piece & PIECE_MASK {
+            PAWN => 100,
+            KNIGHT => 300,
+            BISHOP => 300,
+            ROOK => 500,
+            QUEEN => 900,
+            KING => 20000,
+            _ => panic!("Unknown piece {}", piece),
+        }
     }
 }
 
@@ -588,13 +602,24 @@ impl Board {
     fn evaluate_position(&self) -> Result<i32> {
         if self.checkmate(BLACK)? {
             info!("Found checkmate of {}", BLACK);
-            Ok(i32::MAX)
+            return Ok(i32::MAX);
         } else if self.checkmate(WHITE)? {
             info!("Found checkmate of {}", WHITE);
-            Ok(i32::MIN)
-        } else {
-            Ok(0)
+            return Ok(i32::MIN);
         }
+
+        let white_value: i32 = self
+            .all_pieces_of_color(WHITE)
+            .iter()
+            .map(|(p, _)| p.value())
+            .sum();
+        let black_value: i32 = self
+            .all_pieces_of_color(BLACK)
+            .iter()
+            .map(|(p, _)| p.value())
+            .sum();
+
+        Ok(white_value - black_value)
     }
 
     fn checkmate(&self, color: Color) -> Result<bool> {
@@ -1224,4 +1249,23 @@ fn test_checkmate_opponent_king_and_rook_2_moves_black_to_move() {
     println!("{}", board2);
     println!("{}", board3);
     println!("{}", board4);
+}
+
+#[test]
+fn test_capture_free_piece() {
+    init();
+
+    let board = Board::empty()
+        .with_color_to_move(BLACK)
+        .place_piece(Piece(KING, BLACK), square("A1"))
+        .place_piece(Piece(ROOK, BLACK), square("A7"))
+        .place_piece(Piece(KING, WHITE), square("H8"))
+        .place_piece(Piece(ROOK, WHITE), square("C7"));
+
+    println!("{}", board);
+
+    let mv = board.find_next_move(3).unwrap().unwrap();
+
+    assert_eq!(mv.from, square("A7"));
+    assert_eq!(mv.to, square("C7"));
 }
