@@ -1,8 +1,9 @@
 use core::cmp::Ordering;
-use rand::random;
 use regex::Regex;
 use std::convert::TryFrom;
 use std::fmt;
+use log::{debug, error, info};
+
 /*
  * TODO:
  *
@@ -533,7 +534,7 @@ impl Board {
 
         for (piece, square) in pieces.iter() {
             for to_square in self.possible_moves(*square, false)? {
-                println!(
+                info!(
                     "{}: Evaluating move {} from {} to {}",
                     self.color_to_move,
                     square_symbol(piece),
@@ -586,10 +587,10 @@ impl Board {
      */
     fn evaluate_position(&self) -> Result<i32> {
         if self.checkmate(BLACK)? {
-            println!("Found checkmate of {}", BLACK);
+            info!("Found checkmate of {}", BLACK);
             Ok(i32::MAX)
         } else if self.checkmate(WHITE)? {
-            println!("Found checkmate of {}", WHITE);
+            info!("Found checkmate of {}", WHITE);
             Ok(i32::MIN)
         } else {
             Ok(0)
@@ -601,7 +602,7 @@ impl Board {
             return Ok(false);
         }
 
-        println!("In check. Evaluating for checkmate");
+        info!("{}: In check. Evaluating for checkmate", color);
 
         let pieces = self.all_pieces_of_color(color);
 
@@ -740,6 +741,8 @@ impl fmt::Display for Square {
 }
 
 fn main() {
+    env_logger::init();
+
     let b = Board::empty()
         .place_piece(Piece(PAWN, WHITE), Square::new(File::A, Rank::_2))
         .place_piece(Piece(KNIGHT, WHITE), Square::new(File::B, Rank::_1))
@@ -769,6 +772,11 @@ fn main() {
 }
 
 #[cfg(test)]
+fn init() {
+    let _ = env_logger::builder().is_test(true).try_init();
+}
+
+#[cfg(test)]
 fn sorted(mut v: Vec<Square>) -> Vec<Square> {
     v.sort();
     v
@@ -781,6 +789,7 @@ fn square(s: &str) -> Square {
 
 #[test]
 fn test_parse_square() {
+    init();
     assert_eq!(Square::try_from("A1").unwrap(), Square(File::A, Rank::_1));
     assert_eq!(Square::try_from("B2").unwrap(), Square(File::B, Rank::_2));
     assert_eq!(Square::try_from("C3").unwrap(), Square(File::C, Rank::_3));
@@ -795,6 +804,7 @@ fn test_parse_square() {
 
 #[test]
 fn test_king_free_movement() {
+    init();
     let board = Board::empty()
         .place_piece(Piece(KING, BLACK), Square(File::A, Rank::_1))
         .place_piece(Piece(KING, WHITE), Square(File::C, Rank::_6));
@@ -847,6 +857,7 @@ fn test_king_free_movement() {
 
 #[test]
 fn test_king_obstructed_movement() {
+    init();
     let board = Board::empty()
         .place_piece(Piece(KING, WHITE), Square(File::F, Rank::_2))
         .place_piece(Piece(PAWN, WHITE), Square(File::G, Rank::_3))
@@ -871,6 +882,7 @@ fn test_king_obstructed_movement() {
 
 #[test]
 fn test_king_cannot_move_into_check() {
+    init();
     let board = Board::empty()
         .place_piece(Piece(KING, BLACK), Square(File::A, Rank::_1))
         .place_piece(Piece(ROOK, WHITE), Square(File::C, Rank::_2));
@@ -887,6 +899,7 @@ fn test_king_cannot_move_into_check() {
 
 #[test]
 fn test_king_in_check() {
+    init();
     assert!(Board::empty()
         .place_piece(Piece(KING, WHITE), Square(File::F, Rank::_2))
         .place_piece(Piece(ROOK, BLACK), Square(File::F, Rank::_5))
@@ -967,6 +980,7 @@ fn test_rook_free_movement() {
 
 #[test]
 fn test_rook_boundary_conditions() {
+    init();
     let board = Board::empty().place_piece(Piece(ROOK, WHITE), Square(File::A, Rank::_8));
 
     assert_eq!(
@@ -993,6 +1007,7 @@ fn test_rook_boundary_conditions() {
 
 #[test]
 fn test_rook_obstructed_movement() {
+    init();
     let board = Board::empty()
         .place_piece(Piece(ROOK, WHITE), Square(File::E, Rank::_5))
         .place_piece(Piece(PAWN, WHITE), Square(File::E, Rank::_2))
@@ -1021,6 +1036,7 @@ fn test_rook_obstructed_movement() {
 
 #[test]
 fn test_rook_capture() {
+    init();
     let board = Board::empty()
         .place_piece(Piece(ROOK, WHITE), Square(File::E, Rank::_5))
         .place_piece(Piece(PAWN, BLACK), Square(File::E, Rank::_2))
@@ -1053,6 +1069,7 @@ fn test_rook_capture() {
 
 #[test]
 fn test_is_empty() {
+    init();
     let board = Board::empty()
         .place_piece(Piece(ROOK, WHITE), Square(File::A, Rank::_1))
         .place_piece(Piece(PAWN, BLACK), Square(File::C, Rank::_6));
@@ -1075,6 +1092,7 @@ fn test_is_empty() {
 
 #[test]
 fn test_can_capture() {
+    init();
     let board = Board::empty()
         .place_piece(Piece(ROOK, WHITE), Square(File::A, Rank::_1))
         .place_piece(Piece(PAWN, BLACK), Square(File::C, Rank::_6));
@@ -1100,6 +1118,7 @@ fn test_checkmate() {
 
 #[test]
 fn test_can_escape_checkmate() {
+    init();
     let board = Board::empty()
         .place_piece(Piece(ROOK, WHITE), Square(File::A, Rank::_1))
         .place_piece(Piece(ROOK, WHITE), Square(File::B, Rank::_2))
@@ -1112,6 +1131,7 @@ fn test_can_escape_checkmate() {
 
 #[test]
 fn test_checkmate_opponent_twin_rooks() {
+    init();
     let board = Board::empty()
         .with_color_to_move(WHITE)
         .place_piece(Piece(KING, WHITE), Square(File::H, Rank::_8))
@@ -1129,6 +1149,7 @@ fn test_checkmate_opponent_twin_rooks() {
 
 #[test]
 fn test_checkmate_opponent_king_and_rook() {
+    init();
     let board = Board::empty()
         .with_color_to_move(WHITE)
         .place_piece(Piece(KING, WHITE), Square(File::B, Rank::_6))
@@ -1145,6 +1166,7 @@ fn test_checkmate_opponent_king_and_rook() {
 
 #[test]
 fn test_checkmate_opponent_king_and_rook_2_moves() {
+    init();
     let board1 = Board::empty()
         .with_color_to_move(WHITE)
         .place_piece(Piece(KING, WHITE), square("A1"))
@@ -1175,6 +1197,7 @@ fn test_checkmate_opponent_king_and_rook_2_moves() {
 
 #[test]
 fn test_checkmate_opponent_king_and_rook_2_moves_black_to_move() {
+    init();
     let board1 = Board::empty()
         .with_color_to_move(BLACK)
         .place_piece(Piece(KING, BLACK), square("A1"))
