@@ -464,61 +464,42 @@ impl Board {
     }
 
     fn _pawn_moves(&self, from: Square, piece: Piece) -> Vec<Square> {
-        // Move from initial rank
-
         let mut moves: Vec<Square> = Vec::new();
 
         assert!(*from.rank() != Rank::_1);
         assert!(*from.rank() != Rank::_8);
 
-        if piece.color() == WHITE {
-            // forware moves
-            let move_vectors = if *from.rank() == Rank::_2 {
-                vec![(0, 1), (0, 2)]
+        let (start_rank, move_vector, capture_vectors) = match piece.color() {
+            WHITE => (Rank::_2, (0, 1), vec![(1, 1), (-1, 1)]),
+            BLACK => (Rank::_7, (0, -1), vec![(1, -1), (-1, -1)]),
+        };
+
+        // forward moves (including from start rank)
+
+        let max_magnitude = if *from.rank() == start_rank { 2 } else { 1 };
+
+        for target in Board::plus_vector_scaled(&from, move_vector, max_magnitude).iter() {
+            if self.is_occupied(target.index()) {
+                break;
             } else {
-                vec![(0, 1)]
-            };
-
-            for target in move_vectors
-                .iter()
-                .filter_map(|v| Board::plus_vector(&from, *v))
-            {
-                if self.is_occupied(target.index()) {
-                    break;
-                } else {
-                    moves.push(target)
-                }
-            }
-
-            // standard capture
-            let capture_vectors: Vec<MoveVector> = vec![(1, 1), (-1, 1)];
-
-            // TODO: en passant capture
-
-            for target in capture_vectors
-                .iter()
-                .filter_map(|v| Board::plus_vector(&from, *v))
-            {
-                if self.can_capture(target.index(), piece.color()) {
-                    moves.push(target);
-                }
-            }
-        } else if piece.color() == BLACK {
-            assert!(*from.rank() != Rank::_8);
-
-            if *from.rank() == Rank::_7 {
-                moves.push(Square(*from.file(), Rank::_6));
-                moves.push(Square(*from.file(), Rank::_5));
-            } else if *from.rank() != Rank::_1 {
-                moves.push(Square::from_index(from.index() - N_FILES));
+                moves.push(*target)
             }
         }
 
-        // en-passant capture
+        // standard capture
 
-        // blocked
+        for target in capture_vectors
+            .iter()
+            .filter_map(|v| Board::plus_vector(&from, *v))
+        {
+            if self.can_capture(target.index(), piece.color()) {
+                moves.push(target);
+            }
+        }
 
-        // promotion
+        // TODO: en passant capture
+
+        // TODO: promotion
 
         moves
     }
@@ -526,7 +507,7 @@ impl Board {
     // TODO: this "ignore_king_jeopardy" flag feels hacky. Is there a way to
     // simplify and avoid this? More efficient way to find all attackers of a square?
     //
-    // Maybe don't need to exlude moves into check? Can instead remove those later with the is_in_check option?
+    // Maybe don't need to exclude moves into check? Can instead remove those later with the is_in_check option?
     fn _king_moves(
         &self,
         from: Square,
@@ -1403,6 +1384,17 @@ fn test_pawn_movement_from_start_rank_white() {
 }
 
 #[test]
+fn test_pawn_movement_from_start_rank_black() {
+    init();
+    let board = Board::empty().place_piece(Piece(PAWN, BLACK), square("C7"));
+
+    assert_eq!(
+        sorted(board.possible_moves(square("C7"), false).unwrap()),
+        sorted(vec![square("C6"), square("C5"),])
+    );
+}
+
+#[test]
 fn test_pawn_movement_blocked_from_start_rank_white() {
     init();
     let board1 = Board::empty()
@@ -1425,6 +1417,30 @@ fn test_pawn_movement_blocked_from_start_rank_white() {
 }
 
 #[test]
+fn test_pawn_movement_blocked_from_start_rank_black() {
+    init();
+    let board1 = Board::empty()
+        .with_color_to_move(BLACK)
+        .place_piece(Piece(PAWN, BLACK), square("A7"))
+        .place_piece(Piece(ROOK, WHITE), square("A5"));
+
+    assert_eq!(
+        sorted(board1.possible_moves(square("A7"), false).unwrap()),
+        sorted(vec![square("A6")])
+    );
+
+    let board2 = Board::empty()
+        .with_color_to_move(BLACK)
+        .place_piece(Piece(PAWN, BLACK), square("A7"))
+        .place_piece(Piece(ROOK, WHITE), square("A6"));
+
+    assert_eq!(
+        sorted(board2.possible_moves(square("A7"), false).unwrap()),
+        Vec::new()
+    );
+}
+
+#[test]
 fn test_pawn_movement_from_middle_board_white() {
     init();
     let board = Board::empty().place_piece(Piece(PAWN, WHITE), square("H3"));
@@ -1432,6 +1448,19 @@ fn test_pawn_movement_from_middle_board_white() {
     assert_eq!(
         sorted(board.possible_moves(square("H3"), false).unwrap()),
         sorted(vec![square("H4")])
+    );
+}
+
+#[test]
+fn test_pawn_movement_from_middle_board_black() {
+    init();
+    let board = Board::empty()
+        .with_color_to_move(BLACK)
+        .place_piece(Piece(PAWN, BLACK), square("D4"));
+
+    assert_eq!(
+        sorted(board.possible_moves(square("D4"), false).unwrap()),
+        sorted(vec![square("D3")])
     );
 }
 
@@ -1450,7 +1479,22 @@ fn test_pawn_capture_white() {
 }
 
 #[test]
-fn test_pawn_cannot_capture_own_pieces() {
+fn test_pawn_capture_black() {
+    init();
+    let board = Board::empty()
+        .with_color_to_move(BLACK)
+        .place_piece(Piece(PAWN, BLACK), square("C4"))
+        .place_piece(Piece(ROOK, WHITE), square("B3"))
+        .place_piece(Piece(ROOK, WHITE), square("D3"));
+
+    assert_eq!(
+        sorted(board.possible_moves(square("C4"), false).unwrap()),
+        sorted(vec![square("B3"), square("C3"), square("D3")])
+    );
+}
+
+#[test]
+fn test_pawn_cannot_capture_own_pieces_white() {
     init();
     let board = Board::empty()
         .place_piece(Piece(PAWN, WHITE), square("F6"))
@@ -1460,6 +1504,21 @@ fn test_pawn_cannot_capture_own_pieces() {
     assert_eq!(
         sorted(board.possible_moves(square("F6"), false).unwrap()),
         sorted(vec![square("F7")])
+    );
+}
+
+#[test]
+fn test_pawn_cannot_capture_own_pieces_black() {
+    init();
+    let board = Board::empty()
+        .with_color_to_move(BLACK)
+        .place_piece(Piece(PAWN, BLACK), square("C4"))
+        .place_piece(Piece(ROOK, BLACK), square("B3"))
+        .place_piece(Piece(ROOK, BLACK), square("D3"));
+
+    assert_eq!(
+        sorted(board.possible_moves(square("C4"), false).unwrap()),
+        sorted(vec![square("C3")])
     );
 }
 
@@ -1498,28 +1557,6 @@ fn test_pawn_cannot_capture_around_edge_of_board() {
 //         sorted(vec![square("E6"), square("D6")])
 //     );
 // }
-
-#[test]
-fn test_pawn_movement_from_start_rank_black() {
-    init();
-    let board = Board::empty().place_piece(Piece(PAWN, BLACK), square("C7"));
-
-    assert_eq!(
-        sorted(board.possible_moves(square("C7"), false).unwrap()),
-        sorted(vec![square("C6"), square("C5"),])
-    );
-}
-
-#[test]
-fn test_pawn_movement_from_middle_board_black() {
-    init();
-    let board = Board::empty().place_piece(Piece(PAWN, WHITE), square("C4"));
-
-    assert_eq!(
-        sorted(board.possible_moves(square("C4"), false).unwrap()),
-        sorted(vec![square("C5")])
-    );
-}
 
 #[test]
 fn test_vector_transpose() {
