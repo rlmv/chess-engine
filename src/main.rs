@@ -416,9 +416,12 @@ impl Board {
 
         match Piece::from(self.board[Board::square_index(&from)]) {
             None => Err(NoPieceOnFromSquare(from)),
-            Some(p) if p.piece() == PAWN => Ok(self._pawn_moves(from, p)),
-            Some(p) if p.piece() == ROOK => Ok(self._rook_moves(from, p)),
-            Some(p) if p.piece() == KING => self._king_moves(from, p, ignore_king_jeopardy),
+            Some(p) if p.piece() == PAWN => Ok(self._pawn_moves(from, &p)),
+            Some(p) if p.piece() == KNIGHT => Ok(self._knight_moves(from, &p)),
+            Some(p) if p.piece() == BISHOP => Ok(self._bishop_moves(from, &p)),
+            Some(p) if p.piece() == ROOK => Ok(self._rook_moves(from, &p)),
+            Some(p) if p.piece() == QUEEN => Ok(self._queen_moves(from, &p)),
+            Some(p) if p.piece() == KING => self._king_moves(from, &p, ignore_king_jeopardy),
             _ => Err(NotImplemented),
         }
     }
@@ -463,15 +466,15 @@ impl Board {
         targets
     }
 
-    fn _pawn_moves(&self, from: Square, piece: Piece) -> Vec<Square> {
+    fn _pawn_moves(&self, from: Square, piece: &Piece) -> Vec<Square> {
         let mut moves: Vec<Square> = Vec::new();
 
         assert!(*from.rank() != Rank::_1);
         assert!(*from.rank() != Rank::_8);
 
         let (start_rank, move_vector, capture_vectors) = match piece.color() {
-            WHITE => (Rank::_2, (0, 1), vec![(1, 1), (-1, 1)]),
-            BLACK => (Rank::_7, (0, -1), vec![(1, -1), (-1, -1)]),
+            WHITE => (Rank::_2, (0, 1), [(1, 1), (-1, 1)]),
+            BLACK => (Rank::_7, (0, -1), [(1, -1), (-1, -1)]),
         };
 
         // forward moves (including from start rank)
@@ -511,11 +514,11 @@ impl Board {
     fn _king_moves(
         &self,
         from: Square,
-        king: Piece,
+        king: &Piece,
         ignore_king_jeopardy: bool,
     ) -> Result<Vec<Square>> {
         let mut moves: Vec<Square> = Vec::new();
-        let move_vectors: Vec<MoveVector> = vec![
+        const MOVE_VECTORS: [MoveVector; 8] = [
             (1, 1),
             (1, 0),
             (1, -1),
@@ -526,7 +529,7 @@ impl Board {
             (0, 1),
         ];
 
-        for target in move_vectors
+        for target in MOVE_VECTORS
             .iter()
             .filter_map(|v| Board::plus_vector(&from, *v))
         {
@@ -548,19 +551,19 @@ impl Board {
         Ok(moves)
     }
 
-    fn _rook_moves(&self, from: Square, attacker: Piece) -> Vec<Square> {
+    fn _rook_moves(&self, from: Square, rook: &Piece) -> Vec<Square> {
         let mut moves: Vec<Square> = Vec::new();
 
-        let move_vectors: [MoveVector; 4] = [(1, 0), (0, -1), (-1, 0), (0, 1)];
+        const MOVE_VECTORS: [MoveVector; 4] = [(1, 0), (0, -1), (-1, 0), (0, 1)];
 
         const MAX_MAGNITUDE: u8 = 7;
 
         // Iterate allowed vectors, scaling by all possible magnitudes
-        for v in move_vectors.iter() {
+        for v in MOVE_VECTORS.iter() {
             for target in Board::plus_vector_scaled(&from, *v, MAX_MAGNITUDE) {
-                if self.is_occupied_by_color(target.index(), attacker.color()) {
+                if self.is_occupied_by_color(target.index(), rook.color()) {
                     break;
-                } else if self.can_capture(target.index(), attacker.color()) {
+                } else if self.can_capture(target.index(), rook.color()) {
                     moves.push(target);
                     break;
                 } else {
@@ -569,6 +572,64 @@ impl Board {
             }
         }
 
+        moves
+    }
+
+    fn _knight_moves(&self, from: Square, knight: &Piece) -> Vec<Square> {
+        let mut moves: Vec<Square> = Vec::new();
+        let MOVE_VECTORS: [MoveVector; 8] = [
+            (1, 2),
+            (2, 1),
+            (2, -1),
+            (1, -2),
+            (-1, -2),
+            (-2, -1),
+            (-2, 1),
+            (-1, 2),
+        ];
+
+        for target in MOVE_VECTORS
+            .iter()
+            .filter_map(|v| Board::plus_vector(&from, *v))
+        {
+            if self.is_occupied_by_color(target.index(), knight.color()) {
+                // cannot move into square of own piece
+                continue;
+            } else {
+                moves.push(target);
+            }
+        }
+
+        moves
+    }
+
+    fn _bishop_moves(&self, from: Square, bishop: &Piece) -> Vec<Square> {
+        let mut moves: Vec<Square> = Vec::new();
+
+        const MOVE_VECTORS: [MoveVector; 4] = [(1, 1), (1, -1), (-1, -1), (-1, 1)];
+
+        const MAX_MAGNITUDE: u8 = 7;
+
+        // Iterate allowed vectors, scaling by all possible magnitudes
+        for v in MOVE_VECTORS.iter() {
+            for target in Board::plus_vector_scaled(&from, *v, MAX_MAGNITUDE) {
+                if self.is_occupied_by_color(target.index(), bishop.color()) {
+                    break;
+                } else if self.can_capture(target.index(), bishop.color()) {
+                    moves.push(target);
+                    break;
+                } else {
+                    moves.push(target);
+                }
+            }
+        }
+
+        moves
+    }
+
+    fn _queen_moves(&self, from: Square, queen: &Piece) -> Vec<Square> {
+        let mut moves = self._rook_moves(from, queen);
+        moves.extend(self._bishop_moves(from, queen));
         moves
     }
 
@@ -1557,6 +1618,98 @@ fn test_pawn_cannot_capture_around_edge_of_board() {
 //         sorted(vec![square("E6"), square("D6")])
 //     );
 // }
+
+#[test]
+fn test_knight_moves() {
+    init();
+    let board = Board::empty()
+        .with_color_to_move(BLACK)
+        .place_piece(Piece(KNIGHT, BLACK), square("D4"));
+
+    assert_eq!(
+        sorted(board.possible_moves(square("D4"), false).unwrap()),
+        sorted(vec![
+            square("E6"),
+            square("F5"),
+            square("F3"),
+            square("E2"),
+            square("C2"),
+            square("B3"),
+            square("B5"),
+            square("C6"),
+        ])
+    );
+}
+
+#[test]
+fn test_bishop_moves() {
+    init();
+    let board = Board::empty()
+        .with_color_to_move(WHITE)
+        .place_piece(Piece(BISHOP, WHITE), square("C5"));
+
+    assert_eq!(
+        sorted(board.possible_moves(square("C5"), false).unwrap()),
+        sorted(vec![
+            // right diagonal
+            square("A3"),
+            square("B4"),
+            square("D6"),
+            square("E7"),
+            square("F8"),
+            // left diagonal
+            square("A7"),
+            square("B6"),
+            square("D4"),
+            square("E3"),
+            square("F2"),
+            square("G1"),
+        ])
+    );
+}
+
+#[test]
+fn test_queen_moves() {
+    init();
+    let board = Board::empty()
+        .with_color_to_move(WHITE)
+        .place_piece(Piece(QUEEN, WHITE), square("C5"));
+
+    assert_eq!(
+        sorted(board.possible_moves(square("C5"), false).unwrap()),
+        sorted(vec![
+            // right diagonal
+            square("A3"),
+            square("B4"),
+            square("D6"),
+            square("E7"),
+            square("F8"),
+            // left diagonal
+            square("A7"),
+            square("B6"),
+            square("D4"),
+            square("E3"),
+            square("F2"),
+            square("G1"),
+            // horizontal
+            square("A5"),
+            square("B5"),
+            square("D5"),
+            square("E5"),
+            square("F5"),
+            square("G5"),
+            square("H5"),
+            // vertical
+            square("C1"),
+            square("C2"),
+            square("C3"),
+            square("C4"),
+            square("C6"),
+            square("C7"),
+            square("C8"),
+        ])
+    );
+}
 
 #[test]
 fn test_vector_transpose() {
