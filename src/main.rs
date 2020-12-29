@@ -142,7 +142,17 @@ impl From<regex::Error> for BoardError {
     }
 }
 
-type MoveVector = (i8, i8); // x, y
+#[derive(Debug, Eq, PartialEq)]
+struct MoveVector(i8, i8); // x, y
+
+impl MoveVector {
+    // Multiply a vector by a scalar magnitude
+    fn times(&self, magnitude: u8) -> Self {
+        let MoveVector(x, y) = self;
+
+        MoveVector(x * magnitude as i8, y * magnitude as i8)
+    }
+}
 
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
 enum Rank {
@@ -427,10 +437,10 @@ impl Board {
     }
 
     //
-    fn plus_vector(s: &Square, v: MoveVector) -> Option<Square> {
+    fn plus_vector(s: &Square, v: &MoveVector) -> Option<Square> {
         let signed_index = Board::square_index(s) as i8;
 
-        let (x, y) = v;
+        let MoveVector(x, y) = *v;
 
         let target = signed_index + x + (y * N_FILES as i8);
 
@@ -451,14 +461,13 @@ impl Board {
         }
     }
 
-    fn plus_vector_scaled(s: &Square, v: MoveVector, max_magnitude: u8) -> Vec<Square> {
-        let (x, y) = v;
+    fn plus_vector_scaled(s: &Square, v: &MoveVector, max_magnitude: u8) -> Vec<Square> {
         let mut targets: Vec<Square> = Vec::new();
 
         for m in 1..=max_magnitude {
-            let scaled_v: MoveVector = (x * m as i8, y * m as i8);
+            let scaled_v = v.times(m);
 
-            match Board::plus_vector(s, scaled_v) {
+            match Board::plus_vector(s, &scaled_v) {
                 Some(t) => targets.push(t),
                 None => break,
             }
@@ -473,15 +482,23 @@ impl Board {
         assert!(*from.rank() != Rank::_8);
 
         let (start_rank, move_vector, capture_vectors) = match piece.color() {
-            WHITE => (Rank::_2, (0, 1), [(1, 1), (-1, 1)]),
-            BLACK => (Rank::_7, (0, -1), [(1, -1), (-1, -1)]),
+            WHITE => (
+                Rank::_2,
+                MoveVector(0, 1),
+                [MoveVector(1, 1), MoveVector(-1, 1)],
+            ),
+            BLACK => (
+                Rank::_7,
+                MoveVector(0, -1),
+                [MoveVector(1, -1), MoveVector(-1, -1)],
+            ),
         };
 
         // forward moves (including from start rank)
 
         let max_magnitude = if *from.rank() == start_rank { 2 } else { 1 };
 
-        for target in Board::plus_vector_scaled(&from, move_vector, max_magnitude).iter() {
+        for target in Board::plus_vector_scaled(&from, &move_vector, max_magnitude).iter() {
             if self.is_occupied(target.index()) {
                 break;
             } else {
@@ -493,7 +510,7 @@ impl Board {
 
         for target in capture_vectors
             .iter()
-            .filter_map(|v| Board::plus_vector(&from, *v))
+            .filter_map(|v| Board::plus_vector(&from, v))
         {
             if self.can_capture(target.index(), piece.color()) {
                 moves.push(target);
@@ -519,19 +536,19 @@ impl Board {
     ) -> Result<Vec<Square>> {
         let mut moves: Vec<Square> = Vec::new();
         const MOVE_VECTORS: [MoveVector; 8] = [
-            (1, 1),
-            (1, 0),
-            (1, -1),
-            (0, -1),
-            (-1, -1),
-            (-1, 0),
-            (-1, 1),
-            (0, 1),
+            MoveVector(1, 1),
+            MoveVector(1, 0),
+            MoveVector(1, -1),
+            MoveVector(0, -1),
+            MoveVector(-1, -1),
+            MoveVector(-1, 0),
+            MoveVector(-1, 1),
+            MoveVector(0, 1),
         ];
 
         for target in MOVE_VECTORS
             .iter()
-            .filter_map(|v| Board::plus_vector(&from, *v))
+            .filter_map(|v| Board::plus_vector(&from, v))
         {
             if self.is_occupied_by_color(target.index(), king.color()) {
                 // cannot move into square of own piece
@@ -554,13 +571,18 @@ impl Board {
     fn _rook_moves(&self, from: Square, rook: &Piece) -> Vec<Square> {
         let mut moves: Vec<Square> = Vec::new();
 
-        const MOVE_VECTORS: [MoveVector; 4] = [(1, 0), (0, -1), (-1, 0), (0, 1)];
+        const MOVE_VECTORS: [MoveVector; 4] = [
+            MoveVector(1, 0),
+            MoveVector(0, -1),
+            MoveVector(-1, 0),
+            MoveVector(0, 1),
+        ];
 
         const MAX_MAGNITUDE: u8 = 7;
 
         // Iterate allowed vectors, scaling by all possible magnitudes
         for v in MOVE_VECTORS.iter() {
-            for target in Board::plus_vector_scaled(&from, *v, MAX_MAGNITUDE) {
+            for target in Board::plus_vector_scaled(&from, v, MAX_MAGNITUDE) {
                 if self.is_occupied_by_color(target.index(), rook.color()) {
                     break;
                 } else if self.can_capture(target.index(), rook.color()) {
@@ -577,20 +599,20 @@ impl Board {
 
     fn _knight_moves(&self, from: Square, knight: &Piece) -> Vec<Square> {
         let mut moves: Vec<Square> = Vec::new();
-        let MOVE_VECTORS: [MoveVector; 8] = [
-            (1, 2),
-            (2, 1),
-            (2, -1),
-            (1, -2),
-            (-1, -2),
-            (-2, -1),
-            (-2, 1),
-            (-1, 2),
+        const MOVE_VECTORS: [MoveVector; 8] = [
+            MoveVector(1, 2),
+            MoveVector(2, 1),
+            MoveVector(2, -1),
+            MoveVector(1, -2),
+            MoveVector(-1, -2),
+            MoveVector(-2, -1),
+            MoveVector(-2, 1),
+            MoveVector(-1, 2),
         ];
 
         for target in MOVE_VECTORS
             .iter()
-            .filter_map(|v| Board::plus_vector(&from, *v))
+            .filter_map(|v| Board::plus_vector(&from, v))
         {
             if self.is_occupied_by_color(target.index(), knight.color()) {
                 // cannot move into square of own piece
@@ -606,13 +628,18 @@ impl Board {
     fn _bishop_moves(&self, from: Square, bishop: &Piece) -> Vec<Square> {
         let mut moves: Vec<Square> = Vec::new();
 
-        const MOVE_VECTORS: [MoveVector; 4] = [(1, 1), (1, -1), (-1, -1), (-1, 1)];
+        const MOVE_VECTORS: [MoveVector; 4] = [
+            MoveVector(1, 1),
+            MoveVector(1, -1),
+            MoveVector(-1, -1),
+            MoveVector(-1, 1),
+        ];
 
         const MAX_MAGNITUDE: u8 = 7;
 
         // Iterate allowed vectors, scaling by all possible magnitudes
         for v in MOVE_VECTORS.iter() {
-            for target in Board::plus_vector_scaled(&from, *v, MAX_MAGNITUDE) {
+            for target in Board::plus_vector_scaled(&from, v, MAX_MAGNITUDE) {
                 if self.is_occupied_by_color(target.index(), bishop.color()) {
                     break;
                 } else if self.can_capture(target.index(), bishop.color()) {
@@ -1714,22 +1741,22 @@ fn test_queen_moves() {
 #[test]
 fn test_vector_transpose() {
     let cases = vec![
-        ("A1", (1, 1), Some("B2")),
-        ("A1", (0, 8), None),
-        ("A1", (8, 0), None),
-        ("A1", (1, -1), None),
-        ("C2", (-1, 1), Some("B3")),
-        ("H8", (-1, 1), None),
-        ("H8", (-1, -1), Some("G7")),
-        ("F7", (-1, 2), None),
-        ("B3", (-2, 1), None),
-        ("D3", (-2, 1), Some("B4")),
+        ("A1", MoveVector(1, 1), Some("B2")),
+        ("A1", MoveVector(0, 8), None),
+        ("A1", MoveVector(8, 0), None),
+        ("A1", MoveVector(1, -1), None),
+        ("C2", MoveVector(-1, 1), Some("B3")),
+        ("H8", MoveVector(-1, 1), None),
+        ("H8", MoveVector(-1, -1), Some("G7")),
+        ("F7", MoveVector(-1, 2), None),
+        ("B3", MoveVector(-2, 1), None),
+        ("D3", MoveVector(-2, 1), Some("B4")),
     ];
 
     for (start, vector, end) in cases.iter() {
         println!("{} + {:?} = {}", start, vector, end.unwrap_or("None"));
         assert_eq!(
-            Board::plus_vector(&square(start), *vector),
+            Board::plus_vector(&square(start), vector),
             end.map(|e| square(e))
         );
     }
