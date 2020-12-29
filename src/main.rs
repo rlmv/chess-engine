@@ -1,5 +1,5 @@
 use core::cmp::Ordering;
-use log::{debug, error, info};
+use log::info;
 use regex::Regex;
 use std::convert::TryFrom;
 use std::fmt;
@@ -423,50 +423,84 @@ impl Board {
         }
     }
 
+    //
+    fn plus_vector(s: &Square, v: MoveVector) -> Option<Square> {
+        let signed_index = Board::square_index(s) as i8;
+
+        let (x, y) = v;
+
+        let target = signed_index + x + (y * N_FILES as i8);
+
+        if x < 0 && (s.file().index() as i8 + x) < 0 {
+            // ignore: wrap around to left
+            None
+        } else if x > 0 && (s.file().index() as i8 + x) >= N_FILES as i8 {
+            // ignore: wrap around to right
+            None
+        } else if target < 0 {
+            // out bottom of board
+            None
+        } else if target >= N_SQUARES as i8 {
+            // out top
+            None
+        } else {
+            Some(Square::from_index(target as usize))
+        }
+    }
+
+    fn plus_vector_scaled(s: &Square, v: MoveVector, max_magnitude: u8) -> Vec<Square> {
+        let (x, y) = v;
+        let mut targets: Vec<Square> = Vec::new();
+
+        for m in 1..=max_magnitude {
+            let scaled_v: MoveVector = (x * m as i8, y * m as i8);
+
+            match Board::plus_vector(s, scaled_v) {
+                Some(t) => targets.push(t),
+                None => break,
+            }
+        }
+        targets
+    }
+
     fn _pawn_moves(&self, from: Square, piece: Piece) -> Vec<Square> {
         // Move from initial rank
 
         let mut moves: Vec<Square> = Vec::new();
 
-        let signed_index = Board::square_index(&from) as i8;
+        assert!(*from.rank() != Rank::_1);
+        assert!(*from.rank() != Rank::_8);
 
         if piece.color() == WHITE {
-            assert!(*from.rank() != Rank::_1);
-            assert!(*from.rank() != Rank::_8);
-
+            // forware moves
             let move_vectors = if *from.rank() == Rank::_2 {
                 vec![(0, 1), (0, 2)]
             } else {
                 vec![(0, 1)]
             };
 
-            for (x, y) in move_vectors.iter() {
-                let target = signed_index + x + (y * N_FILES as i8);
-
-                if self.is_occupied(target as usize) {
+            for target in move_vectors
+                .iter()
+                .filter_map(|v| Board::plus_vector(&from, *v))
+            {
+                if self.is_occupied(target.index()) {
                     break;
                 } else {
-                    moves.push(Square::from_index(target as usize));
+                    moves.push(target)
                 }
             }
 
-            // standard_capture
+            // standard capture
             let capture_vectors: Vec<MoveVector> = vec![(1, 1), (-1, 1)];
 
             // TODO: en passant capture
 
-            // TODO: bound checking out sides of board
-            for (x, y) in capture_vectors.iter() {
-                let target = signed_index + x + (y * N_FILES as i8);
-
-		// top/bottom boundary checking is already handled by rank 1/8 assertion above
-
-                if *x == -1 && target % N_FILES as i8 == (N_FILES as i8 - 1) {
-                    // ignore: wrap around to left
-                } else if *x == 1 && target % N_FILES as i8 == 0 {
-                    // ignore: wrap around to right
-                } else if self.can_capture(target as usize, piece.color()) {
-                    moves.push(Square::from_index(target as usize));
+            for target in capture_vectors
+                .iter()
+                .filter_map(|v| Board::plus_vector(&from, *v))
+            {
+                if self.can_capture(target.index(), piece.color()) {
+                    moves.push(target);
                 }
             }
         } else if piece.color() == BLACK {
@@ -499,7 +533,6 @@ impl Board {
         king: Piece,
         ignore_king_jeopardy: bool,
     ) -> Result<Vec<Square>> {
-        let index = Board::square_index(&from);
         let mut moves: Vec<Square> = Vec::new();
         let move_vectors: Vec<MoveVector> = vec![
             (1, 1),
@@ -512,31 +545,22 @@ impl Board {
             (0, 1),
         ];
 
-        let signed_index = index as i8;
-
-        for (x, y) in move_vectors {
-            let target = signed_index + x + (y * N_FILES as i8);
-
-            if x == -1 && target % N_FILES as i8 == (N_FILES as i8 - 1) {
-                // ignore: wrap around to left
-            } else if x == 1 && target % N_FILES as i8 == 0 {
-                // ignore: wrap around to right
-            } else if target < 0 {
-                // out bottom of board
-            } else if target >= N_SQUARES as i8 {
-                // out top
-            } else if self.is_occupied_by_color(target as usize, king.color()) { // TODO usize cast is bad
-                 // cannot move into square of own piece
+        for target in move_vectors
+            .iter()
+            .filter_map(|v| Board::plus_vector(&from, *v))
+        {
+            if self.is_occupied_by_color(target.index(), king.color()) {
+                // cannot move into square of own piece
+                continue;
             } else if !ignore_king_jeopardy
-                && self.attacked_by_color(target as usize, king.color().opposite())?
+                && self.attacked_by_color(target.index(), king.color().opposite())?
             {
-                // TODO usize cast is bad
-
                 // Cannot move *into* check.
-                // BUT: we don't care we are testing when the opponents king
+                // BUT: we don't care if we are testing when the opponents king
                 // moves into check. Don't recurse.
+                continue;
             } else {
-                moves.push(Square::from_index(target as usize));
+                moves.push(target);
             }
         }
 
@@ -544,47 +568,27 @@ impl Board {
     }
 
     fn _rook_moves(&self, from: Square, attacker: Piece) -> Vec<Square> {
-        let index = Board::square_index(&from);
-
-        let mut maybe_moves: Vec<Square> = Vec::new();
+        let mut moves: Vec<Square> = Vec::new();
 
         let move_vectors: [MoveVector; 4] = [(1, 0), (0, -1), (-1, 0), (0, 1)];
 
         const MAX_MAGNITUDE: u8 = 7;
 
-        let signed_index = index as i8;
-
         // Iterate allowed vectors, scaling by all possible magnitudes
-        for (x, y) in move_vectors.iter() {
-            for m in 1..=MAX_MAGNITUDE {
-                let target = signed_index + (m as i8 * x) + (m as i8 * y * N_FILES as i8);
-
-                if target >= N_SQUARES as i8 {
-                    // off top of board
+        for v in move_vectors.iter() {
+            for target in Board::plus_vector_scaled(&from, *v, MAX_MAGNITUDE) {
+                if self.is_occupied_by_color(target.index(), attacker.color()) {
                     break;
-                } else if target < 0 {
-                    // out bottom of board
-                    break;
-                } else if *x == -1 && target % N_FILES as i8 == N_FILES as i8 - 1 {
-                    // wrap around to left
-                    break;
-                } else if *x == 1 && target % N_FILES as i8 == 0 {
-                    // wrap to right
-                    break;
-                } else if self.is_occupied_by_color(target as usize, attacker.color()) {
-                    // TODO: remove usize cast
-                    break;
-                } else if self.can_capture(target as usize, attacker.color()) {
-                    // TODO: remove usize cast
-                    maybe_moves.push(Square::from_index(target as usize));
+                } else if self.can_capture(target.index(), attacker.color()) {
+                    moves.push(target);
                     break;
                 } else {
-                    maybe_moves.push(Square::from_index(target as usize));
+                    moves.push(target);
                 }
             }
         }
 
-        maybe_moves
+        moves
     }
 
     fn all_pieces_of_color(&self, color: Color) -> Vec<(Piece, Square)> {
@@ -1515,4 +1519,28 @@ fn test_pawn_movement_from_middle_board_black() {
         sorted(board.possible_moves(square("C4"), false).unwrap()),
         sorted(vec![square("C5")])
     );
+}
+
+#[test]
+fn test_vector_transpose() {
+    let cases = vec![
+        ("A1", (1, 1), Some("B2")),
+        ("A1", (0, 8), None),
+        ("A1", (8, 0), None),
+        ("A1", (1, -1), None),
+        ("C2", (-1, 1), Some("B3")),
+        ("H8", (-1, 1), None),
+        ("H8", (-1, -1), Some("G7")),
+        ("F7", (-1, 2), None),
+        ("B3", (-2, 1), None),
+        ("D3", (-2, 1), Some("B4")),
+    ];
+
+    for (start, vector, end) in cases.iter() {
+        println!("{} + {:?} = {}", start, vector, end.unwrap_or("None"));
+        assert_eq!(
+            Board::plus_vector(&square(start), *vector),
+            end.map(|e| square(e))
+        );
+    }
 }
