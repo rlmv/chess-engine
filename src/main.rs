@@ -525,9 +525,11 @@ impl Board {
     }
 
     // TODO: this "ignore_king_jeopardy" flag feels hacky. Is there a way to
-    // simplify and avoid this? More efficient way to find all attackers of a square?
+    // simplify and avoid this? More efficient way to find all attackers of a
+    // square?
     //
-    // Maybe don't need to exclude moves into check? Can instead remove those later with the is_in_check option?
+    // Maybe don't need to exclude moves into check? Can instead remove those
+    // later with the is_in_check option?
     fn _king_moves(
         &self,
         from: Square,
@@ -564,6 +566,8 @@ impl Board {
                 moves.push(target);
             }
         }
+
+        // TODO: castle
 
         Ok(moves)
     }
@@ -1439,25 +1443,70 @@ fn test_puzzle_capture_rook() {
         .place_piece(Piece(PAWN, WHITE), square("F2"))
         .place_piece(Piece(ROOK, WHITE), square("A3"));
 
-    println!("{}", board);
+    Puzzle::new(board)
+        .should_find_move(square("B3"), square("A3"))
+        .should_find_move(square("B2"), square("A3"))
+        .should_find_move(square("F3"), square("F2"));
+}
 
-    let mv = board.find_next_move(3).unwrap().unwrap();
-    assert_eq!(mv.from, square("B3"));
-    assert_eq!(mv.to, square("A3"));
+#[cfg(test)]
+struct Puzzle {
+    board: Board,
+}
 
-    let board2 = board.move_piece(mv.from, mv.to).unwrap();
-    let mv2 = board2.find_next_move(3).unwrap().unwrap();
-    assert_eq!(mv2.from, square("B2"));
-    assert_eq!(mv2.to, square("A3"));
+#[cfg(test)]
+impl Puzzle {
+    fn new(board: Board) -> Self {
+        println!("{}", board);
+        Puzzle { board: board }
+    }
 
-    println!("{}", board2);
+    fn should_find_move(&self, expect_from: Square, expect_to: Square) -> Self {
+        let found = self.board.find_next_move(3).unwrap().unwrap();
+        assert_eq!(found.from, expect_from);
+        assert_eq!(found.to, expect_to);
 
-    let board3 = board2.move_piece(mv2.from, mv2.to).unwrap();
-    let mv3 = board3.find_next_move(3).unwrap().unwrap();
-    assert_eq!(mv3.from, square("F3"));
-    assert_eq!(mv3.to, square("F2"));
+        Self::new(self.board.move_piece(found.from, found.to).unwrap())
+    }
 
-    println!("{}", board3);
+    fn respond_with(&self, from: Square, to: Square) -> Self {
+        Self::new(self.board.move_piece(from, to).unwrap())
+    }
+
+    fn should_be_checkmate(&self) {
+        assert!(self.board.checkmate(self.board.color_to_move).unwrap());
+    }
+}
+
+#[test]
+fn test_puzzle_smothered_mate() {
+    // From https://www.chess.com/forum/view/endgames/endgame-puzzles2
+    // q1r4k/6pp/8/3Q2N1/8/8/6PP/7K w - - 0 1
+
+    init();
+
+    let board= Board::empty()
+        .with_color_to_move(WHITE)
+        .place_piece(Piece(QUEEN, BLACK), square("A8"))
+        .place_piece(Piece(ROOK, BLACK), square("C8"))
+        .place_piece(Piece(KING, BLACK), square("H8"))
+        .place_piece(Piece(PAWN, BLACK), square("G7"))
+        .place_piece(Piece(PAWN, BLACK), square("H7"))
+        .place_piece(Piece(QUEEN, WHITE), square("D5"))
+        .place_piece(Piece(KNIGHT, WHITE), square("G5"))
+        .place_piece(Piece(PAWN, WHITE), square("G2"))
+        .place_piece(Piece(PAWN, WHITE), square("H2"))
+        .place_piece(Piece(KING, WHITE), square("H1"));
+
+    Puzzle::new(board)
+	.should_find_move(square("G5"), square("F7"))
+	.respond_with(square("H8"), square("G8"))
+	.should_find_move(square("F7"), square("H6"))
+	.respond_with(square("G8"), square("H8"))
+	.should_find_move(square("D5"), square("G8"))
+	.respond_with(square("C8"), square("G8"))
+	.should_find_move(square("H6"), square("F7"))
+	.should_be_checkmate();
 }
 
 #[test]
