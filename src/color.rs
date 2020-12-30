@@ -4,7 +4,7 @@ use crate::constants::*;
 
 pub use Color::*;
 
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Color {
     WHITE,
     BLACK,

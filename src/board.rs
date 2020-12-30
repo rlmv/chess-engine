@@ -20,7 +20,7 @@ pub type Result<T> = std::result::Result<T, BoardError>;
  * - ingest lichess puzzles in a test suite
  */
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Piece(pub u8, pub Color);
 
 impl Piece {
@@ -73,11 +73,44 @@ pub const KING: u8 = 0b00000110;
 
 const PIECE_MASK: u8 = 0b00000111;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+pub struct CastleRights {
+    pub kingside_black: bool,
+    pub queenside_black: bool,
+    pub kingside_white: bool,
+    pub queenside_white: bool,
+}
+
+impl CastleRights {
+    pub fn all() -> Self {
+        CastleRights {
+            kingside_black: true,
+            queenside_black: true,
+            kingside_white: true,
+            queenside_white: true,
+        }
+    }
+
+    pub fn none() -> Self {
+        CastleRights {
+            kingside_black: false,
+            queenside_black: false,
+            kingside_white: false,
+            queenside_white: false,
+        }
+    }
+}
+
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub struct Board {
     board: [u8; 64],
     color_to_move: Color,
     en_passant_target: Option<Square>,
+    // # of moves since last capture or pawn advance. For enforcing the 50-move rule.
+    halfmove_clock: u16,
+    // Move #, incremented after Black plays
+    fullmove_clock: u16,
+    can_castle: CastleRights,
 }
 
 impl Board {
@@ -86,18 +119,44 @@ impl Board {
             board: [EMPTY; 64],
             color_to_move: WHITE,
             en_passant_target: None,
+            halfmove_clock: 0,
+            fullmove_clock: 1,
+            can_castle: CastleRights::all(),
         }
     }
 
-    fn with_color_to_move(&self, color: Color) -> Self {
+    pub fn with_color_to_move(&self, color: Color) -> Self {
         let mut new = self.clone();
         new.color_to_move = color;
         new
     }
 
+    pub fn with_fullmove_clock(&self, i: u16) -> Self {
+        let mut new = self.clone();
+        new.fullmove_clock = i;
+        new
+    }
+
+    pub fn with_halfmove_clock(&self, i: u16) -> Self {
+        let mut new = self.clone();
+        new.halfmove_clock = i;
+        new
+    }
+
+    pub fn with_en_passant_target(&self, target: Option<Square>) -> Self {
+        let mut new = self.clone();
+        new.en_passant_target = target;
+        new
+    }
+
+    pub fn with_castle_rights(&self, rights: CastleRights) -> Self {
+        let mut new = self.clone();
+        new.can_castle = rights;
+        new
+    }
+
     pub fn place_piece(&self, piece: Piece, on: Square) -> Board {
         let mut new = self.clone();
-
         new.board[on.index()] = piece.encode();
         new
     }
