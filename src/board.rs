@@ -360,7 +360,6 @@ impl Board {
     }
 
     fn _knight_moves(&self, from: Square, knight: &Piece) -> Vec<Square> {
-        let mut moves: Vec<Square> = Vec::new();
         const MOVE_VECTORS: [MoveVector; 8] = [
             MoveVector(1, 2),
             MoveVector(2, 1),
@@ -372,19 +371,11 @@ impl Board {
             MoveVector(-1, 2),
         ];
 
-        for target in MOVE_VECTORS
+        MOVE_VECTORS
             .iter()
             .filter_map(|v| Board::plus_vector(&from, v))
-        {
-            if self.is_occupied_by_color(target.index(), knight.color()) {
-                // cannot move into square of own piece
-                continue;
-            } else {
-                moves.push(target);
-            }
-        }
-
-        moves
+            .filter(|target| !self.is_occupied_by_color(target.index(), knight.color()))
+            .collect()
     }
 
     fn _bishop_moves(&self, from: Square, bishop: &Piece) -> Vec<Square> {
