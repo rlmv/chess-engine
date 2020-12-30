@@ -1,6 +1,8 @@
-mod board;
-use board::Color::*;
-use board::*;
+use chess_engine::board::*;
+use chess_engine::color::*;
+use chess_engine::file::*;
+use chess_engine::rank::*;
+use chess_engine::square::*;
 
 fn main() {
     env_logger::init();

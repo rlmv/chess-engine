@@ -1,8 +1,17 @@
-use core::cmp::Ordering;
 use log::info;
-use regex::Regex;
 use std::convert::TryFrom;
 use std::fmt;
+
+use crate::color::*;
+use crate::constants::*;
+use crate::error::BoardError;
+use crate::error::BoardError::*;
+use crate::file::*;
+use crate::rank::*;
+use crate::square::*;
+use crate::vector::*;
+
+pub type Result<T> = std::result::Result<T, BoardError>;
 
 /*
  * TODO:
@@ -54,45 +63,6 @@ impl Piece {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub enum Color {
-    WHITE,
-    BLACK,
-}
-use Color::*;
-
-impl Color {
-    fn encode(&self) -> u8 {
-        match self {
-            WHITE => WHITE_BIT,
-            BLACK => BLACK_BIT,
-        }
-    }
-
-    fn opposite(&self) -> Color {
-        match self {
-            WHITE => BLACK,
-            BLACK => WHITE,
-        }
-    }
-}
-
-impl From<u8> for Color {
-    fn from(x: u8) -> Self {
-        match x & COLOR_MASK {
-            WHITE_BIT => WHITE,
-            BLACK_BIT => BLACK,
-            y => panic!("Unknown color {} for piece {}", y, x),
-        }
-    }
-}
-
-impl fmt::Display for Color {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}", self)
-    }
-}
-
 const EMPTY: u8 = 0b00000000;
 pub const PAWN: u8 = 0b00000001;
 pub const KNIGHT: u8 = 0b00000010;
@@ -102,208 +72,6 @@ pub const QUEEN: u8 = 0b00000101;
 pub const KING: u8 = 0b00000110;
 
 const PIECE_MASK: u8 = 0b00000111;
-
-const BLACK_BIT: u8 = 0b01000000;
-const WHITE_BIT: u8 = 0b10000000;
-const COLOR_MASK: u8 = 0b11000000;
-
-const N_RANKS: usize = 8;
-const N_FILES: usize = 8;
-const N_SQUARES: usize = N_RANKS * N_FILES;
-
-type Result<T> = std::result::Result<T, BoardError>;
-
-#[derive(Debug)]
-pub enum BoardError {
-    NoPieceOnFromSquare(Square),
-    NotImplemented,
-    IllegalState(String),
-    ParseError(String),
-}
-use BoardError::*;
-
-impl fmt::Display for BoardError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            NoPieceOnFromSquare(square) => write!(f, "Square {:?} does not have a piece", square),
-            NotImplemented => write!(f, "Missing implementation"),
-            IllegalState(msg) => write!(f, "{}", msg),
-            ParseError(msg) => write!(f, "{}", msg),
-        }
-    }
-}
-
-impl From<regex::Error> for BoardError {
-    // TODO: chain errors
-    fn from(re: regex::Error) -> Self {
-        BoardError::ParseError(format!("{:?}", re))
-    }
-}
-
-#[derive(Debug, Eq, PartialEq)]
-struct MoveVector(i8, i8); // x, y
-
-impl MoveVector {
-    // Multiply a vector by a scalar magnitude
-    fn times(&self, magnitude: u8) -> Self {
-        let MoveVector(x, y) = self;
-
-        MoveVector(x * magnitude as i8, y * magnitude as i8)
-    }
-}
-
-#[derive(Debug, Eq, PartialEq, Clone, Copy)]
-pub enum Rank {
-    _1,
-    _2,
-    _3,
-    _4,
-    _5,
-    _6,
-    _7,
-    _8,
-}
-
-impl Rank {
-    fn index(&self) -> u8 {
-        use Rank::*;
-        match self {
-            _1 => 0,
-            _2 => 1,
-            _3 => 2,
-            _4 => 3,
-            _5 => 4,
-            _6 => 5,
-            _7 => 6,
-            _8 => 7,
-        }
-    }
-
-    fn from_index(i: usize) -> Self {
-        use Rank::*;
-        match i / N_RANKS {
-            0 => _1,
-            1 => _2,
-            2 => _3,
-            3 => _4,
-            4 => _5,
-            5 => _6,
-            6 => _7,
-            7 => _8,
-            _ => panic!("Unknown rank"),
-        }
-    }
-
-    fn from_str(s: &str) -> Self {
-        use Rank::*;
-        match s {
-            "1" => _1,
-            "2" => _2,
-            "3" => _3,
-            "4" => _4,
-            "5" => _5,
-            "6" => _6,
-            "7" => _7,
-            "8" => _8,
-            _ => panic!("Unknown rank"),
-        }
-    }
-}
-
-impl fmt::Display for Rank {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", format!("{:?}", self).trim_start_matches("_"))
-    }
-}
-
-const RANKS: [Rank; 8] = [
-    Rank::_1,
-    Rank::_2,
-    Rank::_3,
-    Rank::_4,
-    Rank::_5,
-    Rank::_6,
-    Rank::_7,
-    Rank::_8,
-];
-
-#[derive(Debug, Eq, PartialEq, Clone, Copy)]
-pub enum File {
-    A,
-    B,
-    C,
-    D,
-    E,
-    F,
-    G,
-    H,
-}
-
-impl File {
-    fn index(&self) -> u8 {
-        use File::*;
-
-        match self {
-            A => 0,
-            B => 1,
-            C => 2,
-            D => 3,
-            E => 4,
-            F => 5,
-            G => 6,
-            H => 7,
-        }
-    }
-
-    fn from_index(i: usize) -> Self {
-        use File::*;
-
-        match i % N_FILES {
-            0 => A,
-            1 => B,
-            2 => C,
-            3 => D,
-            4 => E,
-            5 => F,
-            6 => G,
-            7 => H,
-            _ => panic!("Unknown file"),
-        }
-    }
-
-    fn from_str(s: &str) -> Self {
-        use File::*;
-
-        match s {
-            "A" => A,
-            "B" => B,
-            "C" => C,
-            "D" => D,
-            "E" => E,
-            "F" => F,
-            "G" => G,
-            "H" => H,
-            _ => panic!("Unknown file"),
-        }
-    }
-}
-
-impl fmt::Display for File {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}", self)
-    }
-}
-
-const FILES: [File; 8] = [
-    File::A,
-    File::B,
-    File::C,
-    File::D,
-    File::E,
-    File::F,
-    File::G,
-    File::H,
-];
 
 #[derive(Copy, Clone)]
 pub struct Board {
@@ -327,26 +95,18 @@ impl Board {
         new
     }
 
-    /*
-     * Convert a square, eg F2, to an index into the board array.
-     */
-    fn square_index(of: &Square) -> usize {
-        let &Square(file, rank) = &of;
-        (rank.index() * 8 + file.index()).into()
-    }
-
     pub fn place_piece(&self, piece: Piece, on: Square) -> Board {
         let mut new = self.clone();
 
-        new.board[Board::square_index(&on)] = piece.encode();
+        new.board[on.index()] = piece.encode();
         new
     }
 
     pub fn move_piece(&self, from: Square, to: Square) -> Result<Board> {
         let mut new = self.clone();
 
-        let i = Board::square_index(&from);
-        let j = Board::square_index(&to);
+        let i = from.index();
+        let j = to.index();
 
         if new.board[i] & PIECE_MASK == EMPTY {
             return Err(NoPieceOnFromSquare(from));
@@ -422,7 +182,7 @@ impl Board {
     fn possible_moves(&self, from: Square, ignore_king_jeopardy: bool) -> Result<Vec<Square>> {
         // TODO: check color, turn
 
-        match Piece::from(self.board[Board::square_index(&from)]) {
+        match Piece::from(self.board[from.index()]) {
             None => Err(NoPieceOnFromSquare(from)),
             Some(p) if p.piece() == PAWN => Ok(self._pawn_moves(from, &p)),
             Some(p) if p.piece() == KNIGHT => Ok(self._knight_moves(from, &p)),
@@ -436,7 +196,7 @@ impl Board {
 
     //
     fn plus_vector(s: &Square, v: &MoveVector) -> Option<Square> {
-        let signed_index = Board::square_index(s) as i8;
+        let signed_index = s.index() as i8;
 
         let MoveVector(x, y) = *v;
 
@@ -818,13 +578,6 @@ impl fmt::Display for Board {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-pub struct Move {
-    from: Square,
-    to: Square,
-    score: i32,
-}
-
 fn square_symbol(p: &Piece) -> char {
     let Piece(piece, color) = *p;
 
@@ -845,80 +598,11 @@ fn square_symbol(p: &Piece) -> char {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Clone, Copy)]
-pub struct Square(File, Rank);
-
-impl Square {
-    pub fn new(file: File, rank: Rank) -> Square {
-        Square(file, rank)
-    }
-
-    fn rank(&self) -> &Rank {
-        let Square(_, rank) = self;
-        rank
-    }
-
-    fn file(&self) -> &File {
-        let Square(file, _) = self;
-        file
-    }
-
-    fn from_index(i: usize) -> Square {
-        if i >= N_SQUARES {
-            panic!("Square index {} is larger than max {}", i, N_SQUARES);
-        }
-
-        let rank = Rank::from_index(i);
-        let file = File::from_index(i);
-
-        Square::new(file, rank)
-    }
-
-    fn index(&self) -> usize {
-        Board::square_index(self)
-    }
-}
-
-impl From<(File, Rank)> for Square {
-    fn from((file, rank): (File, Rank)) -> Self {
-        Square::new(file, rank)
-    }
-}
-
-impl TryFrom<&str> for Square {
-    type Error = BoardError;
-
-    fn try_from(s: &str) -> Result<Self> {
-        let re = Regex::new(r"^([A-H])([1-8])$")?;
-
-        let capture = match re.captures_iter(s).next() {
-            Some(capture) => capture,
-            None => return Err(ParseError(format!("Could not parse {} as a square", s))),
-        };
-        Ok(Square::new(
-            File::from_str(&capture[1]),
-            Rank::from_str(&capture[2]),
-        ))
-    }
-}
-
-impl Ord for Square {
-    fn cmp(&self, other: &Self) -> Ordering {
-        Board::square_index(self).cmp(&Board::square_index(other))
-    }
-}
-
-impl PartialOrd for Square {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl fmt::Display for Square {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let Square(file, rank) = self;
-        write!(f, "{}{}", file, rank)
-    }
+#[derive(Clone, Copy, Debug)]
+pub struct Move {
+    from: Square,
+    to: Square,
+    score: i32,
 }
 
 #[cfg(test)]
@@ -935,21 +619,6 @@ fn sorted(mut v: Vec<Square>) -> Vec<Square> {
 #[cfg(test)]
 fn square(s: &str) -> Square {
     Square::try_from(s).unwrap()
-}
-
-#[test]
-fn test_parse_square() {
-    init();
-    assert_eq!(Square::try_from("A1").unwrap(), Square(File::A, Rank::_1));
-    assert_eq!(Square::try_from("B2").unwrap(), Square(File::B, Rank::_2));
-    assert_eq!(Square::try_from("C3").unwrap(), Square(File::C, Rank::_3));
-    assert_eq!(Square::try_from("D4").unwrap(), Square(File::D, Rank::_4));
-    assert_eq!(Square::try_from("E5").unwrap(), Square(File::E, Rank::_5));
-    assert_eq!(Square::try_from("F6").unwrap(), Square(File::F, Rank::_6));
-    assert_eq!(Square::try_from("G7").unwrap(), Square(File::G, Rank::_7));
-    assert_eq!(Square::try_from("H8").unwrap(), Square(File::H, Rank::_8));
-
-    assert!(Square::try_from("I8").is_err());
 }
 
 #[test]
