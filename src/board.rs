@@ -12,7 +12,7 @@ use std::fmt;
  */
 
 #[derive(Debug)]
-struct Piece(u8, Color);
+pub struct Piece(pub u8, pub Color);
 
 impl Piece {
     fn piece(&self) -> u8 {
@@ -29,7 +29,7 @@ impl Piece {
         (piece & PIECE_MASK) | (color.encode())
     }
 
-    fn from(x: u8) -> Option<Self> {
+    pub fn from(x: u8) -> Option<Self> {
         if x & PIECE_MASK == EMPTY {
             return None;
         }
@@ -55,7 +55,7 @@ impl Piece {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
-enum Color {
+pub enum Color {
     WHITE,
     BLACK,
 }
@@ -94,12 +94,12 @@ impl fmt::Display for Color {
 }
 
 const EMPTY: u8 = 0b00000000;
-const PAWN: u8 = 0b00000001;
-const KNIGHT: u8 = 0b00000010;
-const BISHOP: u8 = 0b00000011;
-const ROOK: u8 = 0b000000100;
-const QUEEN: u8 = 0b00000101;
-const KING: u8 = 0b00000110;
+pub const PAWN: u8 = 0b00000001;
+pub const KNIGHT: u8 = 0b00000010;
+pub const BISHOP: u8 = 0b00000011;
+pub const ROOK: u8 = 0b000000100;
+pub const QUEEN: u8 = 0b00000101;
+pub const KING: u8 = 0b00000110;
 
 const PIECE_MASK: u8 = 0b00000111;
 
@@ -114,7 +114,7 @@ const N_SQUARES: usize = N_RANKS * N_FILES;
 type Result<T> = std::result::Result<T, BoardError>;
 
 #[derive(Debug)]
-enum BoardError {
+pub enum BoardError {
     NoPieceOnFromSquare(Square),
     NotImplemented,
     IllegalState(String),
@@ -125,9 +125,7 @@ use BoardError::*;
 impl fmt::Display for BoardError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            NoPieceOnFromSquare(square) => {
-                write!(f, "Square {:?} does not have a piece", square)
-            }
+            NoPieceOnFromSquare(square) => write!(f, "Square {:?} does not have a piece", square),
             NotImplemented => write!(f, "Missing implementation"),
             IllegalState(msg) => write!(f, "{}", msg),
             ParseError(msg) => write!(f, "{}", msg),
@@ -155,7 +153,7 @@ impl MoveVector {
 }
 
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
-enum Rank {
+pub enum Rank {
     _1,
     _2,
     _3,
@@ -230,7 +228,7 @@ const RANKS: [Rank; 8] = [
 ];
 
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
-enum File {
+pub enum File {
     A,
     B,
     C,
@@ -308,14 +306,14 @@ const FILES: [File; 8] = [
 ];
 
 #[derive(Copy, Clone)]
-struct Board {
+pub struct Board {
     board: [u8; 64],
     color_to_move: Color,
     en_passant_target: Option<Square>,
 }
 
 impl Board {
-    fn empty() -> Self {
+    pub fn empty() -> Self {
         Board {
             board: [EMPTY; 64],
             color_to_move: WHITE,
@@ -337,14 +335,14 @@ impl Board {
         (rank.index() * 8 + file.index()).into()
     }
 
-    fn place_piece(&self, piece: Piece, on: Square) -> Board {
+    pub fn place_piece(&self, piece: Piece, on: Square) -> Board {
         let mut new = self.clone();
 
         new.board[Board::square_index(&on)] = piece.encode();
         new
     }
 
-    fn move_piece(&self, from: Square, to: Square) -> Result<Board> {
+    pub fn move_piece(&self, from: Square, to: Square) -> Result<Board> {
         let mut new = self.clone();
 
         let i = Board::square_index(&from);
@@ -679,7 +677,7 @@ impl Board {
         pieces
     }
 
-    fn find_next_move(&self, depth: u8) -> Result<Option<Move>> {
+    pub fn find_next_move(&self, depth: u8) -> Result<Option<Move>> {
         // Find all pieces
         // Generate all valid moves for those pieces.
         // After each move, must not be in check - prune.
@@ -821,7 +819,7 @@ impl fmt::Display for Board {
 }
 
 #[derive(Clone, Copy, Debug)]
-struct Move {
+pub struct Move {
     from: Square,
     to: Square,
     score: i32,
@@ -848,10 +846,10 @@ fn square_symbol(p: &Piece) -> char {
 }
 
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
-struct Square(File, Rank);
+pub struct Square(File, Rank);
 
 impl Square {
-    fn new(file: File, rank: Rank) -> Square {
+    pub fn new(file: File, rank: Rank) -> Square {
         Square(file, rank)
     }
 
@@ -921,37 +919,6 @@ impl fmt::Display for Square {
         let Square(file, rank) = self;
         write!(f, "{}{}", file, rank)
     }
-}
-
-fn main() {
-    env_logger::init();
-
-    let b = Board::empty()
-        .place_piece(Piece(PAWN, WHITE), Square::new(File::A, Rank::_2))
-        .place_piece(Piece(KNIGHT, WHITE), Square::new(File::B, Rank::_1))
-        .place_piece(Piece(BISHOP, WHITE), Square::new(File::C, Rank::_1))
-        .place_piece(Piece(KING, WHITE), Square::new(File::E, Rank::_1))
-        .place_piece(Piece(BISHOP, BLACK), Square::new(File::C, Rank::_8))
-        .place_piece(Piece(KING, BLACK), Square::new(File::E, Rank::_8));
-
-    println!("{}", b);
-    println!(
-        "{}",
-        b.move_piece(
-            Square::new(File::A, Rank::_2),
-            Square::new(File::A, Rank::_4)
-        )
-        .unwrap()
-    );
-
-    let b2 = Board::empty()
-        .place_piece(Piece(ROOK, WHITE), Square::new(File::A, Rank::_2))
-        .place_piece(Piece(KING, WHITE), Square::new(File::E, Rank::_1))
-        .place_piece(Piece(ROOK, BLACK), Square::new(File::C, Rank::_8))
-        .place_piece(Piece(KING, BLACK), Square::new(File::E, Rank::_8));
-
-    println!("{}", b2);
-    println!("{:?}", b2.find_next_move(1).unwrap());
 }
 
 #[cfg(test)]
@@ -1485,7 +1452,7 @@ fn test_puzzle_smothered_mate() {
 
     init();
 
-    let board= Board::empty()
+    let board = Board::empty()
         .with_color_to_move(WHITE)
         .place_piece(Piece(QUEEN, BLACK), square("A8"))
         .place_piece(Piece(ROOK, BLACK), square("C8"))
@@ -1499,14 +1466,14 @@ fn test_puzzle_smothered_mate() {
         .place_piece(Piece(KING, WHITE), square("H1"));
 
     Puzzle::new(board)
-	.should_find_move(square("G5"), square("F7"))
-	.respond_with(square("H8"), square("G8"))
-	.should_find_move(square("F7"), square("H6"))
-	.respond_with(square("G8"), square("H8"))
-	.should_find_move(square("D5"), square("G8"))
-	.respond_with(square("C8"), square("G8"))
-	.should_find_move(square("H6"), square("F7"))
-	.should_be_checkmate();
+        .should_find_move(square("G5"), square("F7"))
+        .respond_with(square("H8"), square("G8"))
+        .should_find_move(square("F7"), square("H6"))
+        .respond_with(square("G8"), square("H8"))
+        .should_find_move(square("D5"), square("G8"))
+        .respond_with(square("C8"), square("G8"))
+        .should_find_move(square("H6"), square("F7"))
+        .should_be_checkmate();
 }
 
 #[test]
