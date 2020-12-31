@@ -15,10 +15,6 @@ use nom::{
     IResult,
 };
 
-//type Result<T> = std::result::Result<T, BoardError>;
-
-// named!(pieces<&str,char>, one_of!("rnbkqpRNBKQP"));
-
 #[derive(Debug, Clone)]
 enum ParseResult {
     Piece(Piece),
@@ -50,7 +46,12 @@ impl ParseResult {
         ParseResult::Piece(Piece(piece, color))
     }
 }
-
+/*
+ * Parse FEN notation.
+ *
+ * https://en.wikipedia.org/wiki/Forsyth%E2%80%93Edwards_Notation
+ * https://ia802908.us.archive.org/26/items/pgn-standard-1994-03-12/PGN_standard_1994-03-12.txt
+ */
 pub fn parse(fen: &str) -> IResult<&str, Board> {
     debug!("Parsing FEN: {}", fen);
 
@@ -200,6 +201,55 @@ fn test_parse_start_position() {
         .place_piece(Piece(KING, WHITE), square("E1"))
         .place_piece(Piece(BISHOP, WHITE), square("F1"))
         .place_piece(Piece(KNIGHT, WHITE), square("G1"))
+        .place_piece(Piece(ROOK, WHITE), square("H1"));
+
+    assert_eq!(board, expected);
+}
+
+#[test]
+fn test_parse_start_e4_c5_Nf3() {
+    init();
+
+    let fen = String::from("rnbqkbnr/pp1ppppp/8/2p5/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2");
+    let (_, board) = parse(&fen).unwrap();
+
+    let expected = Board::empty()
+        .with_color_to_move(BLACK)
+        .with_fullmove_clock(2)
+        .with_halfmove_clock(1)
+        .with_en_passant_target(None)
+        .with_castle_rights(CastleRights::all())
+        .place_piece(Piece(ROOK, BLACK), square("A8"))
+        .place_piece(Piece(KNIGHT, BLACK), square("B8"))
+        .place_piece(Piece(BISHOP, BLACK), square("C8"))
+        .place_piece(Piece(QUEEN, BLACK), square("D8"))
+        .place_piece(Piece(KING, BLACK), square("E8"))
+        .place_piece(Piece(BISHOP, BLACK), square("F8"))
+        .place_piece(Piece(KNIGHT, BLACK), square("G8"))
+        .place_piece(Piece(ROOK, BLACK), square("H8"))
+        .place_piece(Piece(PAWN, BLACK), square("A7"))
+        .place_piece(Piece(PAWN, BLACK), square("B7"))
+        .place_piece(Piece(PAWN, BLACK), square("C5"))
+        .place_piece(Piece(PAWN, BLACK), square("D7"))
+        .place_piece(Piece(PAWN, BLACK), square("E7"))
+        .place_piece(Piece(PAWN, BLACK), square("F7"))
+        .place_piece(Piece(PAWN, BLACK), square("G7"))
+        .place_piece(Piece(PAWN, BLACK), square("H7"))
+        .place_piece(Piece(PAWN, WHITE), square("A2"))
+        .place_piece(Piece(PAWN, WHITE), square("B2"))
+        .place_piece(Piece(PAWN, WHITE), square("C2"))
+        .place_piece(Piece(PAWN, WHITE), square("D2"))
+        .place_piece(Piece(PAWN, WHITE), square("E4"))
+        .place_piece(Piece(PAWN, WHITE), square("F2"))
+        .place_piece(Piece(PAWN, WHITE), square("G2"))
+        .place_piece(Piece(PAWN, WHITE), square("H2"))
+        .place_piece(Piece(ROOK, WHITE), square("A1"))
+        .place_piece(Piece(KNIGHT, WHITE), square("B1"))
+        .place_piece(Piece(BISHOP, WHITE), square("C1"))
+        .place_piece(Piece(QUEEN, WHITE), square("D1"))
+        .place_piece(Piece(KING, WHITE), square("E1"))
+        .place_piece(Piece(BISHOP, WHITE), square("F1"))
+        .place_piece(Piece(KNIGHT, WHITE), square("F3"))
         .place_piece(Piece(ROOK, WHITE), square("H1"));
 
     assert_eq!(board, expected);
