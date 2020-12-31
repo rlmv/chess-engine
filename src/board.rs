@@ -6,6 +6,7 @@ use crate::color::*;
 use crate::constants::*;
 use crate::error::BoardError;
 use crate::error::BoardError::*;
+use crate::fen;
 use crate::file::*;
 use crate::rank::*;
 use crate::square::*;
@@ -1162,6 +1163,29 @@ impl Puzzle {
     fn should_be_checkmate(&self) {
         assert!(self.board.checkmate(self.board.color_to_move).unwrap());
     }
+}
+
+// #[test]
+// fn test_puzzle_capture_it_all() {
+//     // https://lichess.org/training/GDfDV
+//     // TODO: too deep.
+//     init();
+//     let board = fen::parse("r2q3r/pp2pkbp/2n1b1p1/2p5/6n1/2N2N2/PPPP2PP/R1BQ1RK1 w - - 0 12").unwrap();
+
+//     Puzzle::new(board)
+//         .should_find_move(square("F3"), square("G5"));
+
+// }
+
+#[test]
+fn test_puzzle_grab_bishop_and_knight() {
+    init();
+    let board = fen::parse("1kr4r/1p2qp2/p2p1p1p/4p3/4P3/1b2Q3/nPPRBPPP/1K5R w - - 0 19").unwrap();
+
+    Puzzle::new(board)
+        .should_find_move(square("E3"), square("B3"))
+        .respond_with(square("A2"), square("C3"))
+        .should_find_move(square("B2"), square("C3"));
 }
 
 #[test]

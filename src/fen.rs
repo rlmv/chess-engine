@@ -1,7 +1,8 @@
 use crate::board::*;
 use crate::color::*;
+use crate::error::BoardError;
 use crate::square::*;
-use log::debug;
+use log::{debug, error};
 use std::convert::TryFrom;
 
 use nom::{
@@ -12,7 +13,7 @@ use nom::{
     combinator::{map, map_res},
     multi::{count, many1},
     sequence::{pair, terminated},
-    IResult,
+    Finish, IResult,
 };
 
 #[derive(Debug, Clone)]
@@ -46,13 +47,25 @@ impl ParseResult {
         ParseResult::Piece(Piece(piece, color))
     }
 }
+
 /*
- * Parse FEN notation.
+ * Parse FEN notation into a Board representation.
+ */
+pub fn parse(fen: &str) -> Result<Board> {
+    fen_parser(fen).finish().map(|(_, b)| b).map_err(|e| {
+        error!("{:?}", e);
+        BoardError::ParseError(format!("Could not parse FEN '{}': {}", fen, e))
+    })
+}
+
+/*
+ * Internal FEN parser implementation using Nom. Can be composed with other
+ * parsers.
  *
  * https://en.wikipedia.org/wiki/Forsyth%E2%80%93Edwards_Notation
  * https://ia802908.us.archive.org/26/items/pgn-standard-1994-03-12/PGN_standard_1994-03-12.txt
  */
-pub fn parse(fen: &str) -> IResult<&str, Board> {
+fn fen_parser(fen: &str) -> IResult<&str, Board> {
     debug!("Parsing FEN: {}", fen);
 
     let pieces = map(one_of("rnbkqpRNBKQP"), ParseResult::piece);
@@ -162,7 +175,7 @@ fn test_parse_start_position() {
     init();
 
     let fen = String::from("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
-    let (_, board) = parse(&fen).unwrap();
+    let board = parse(&fen).unwrap();
 
     let expected = Board::empty()
         .with_color_to_move(WHITE)
@@ -211,7 +224,7 @@ fn test_parse_start_e4_c5_Nf3() {
     init();
 
     let fen = String::from("rnbqkbnr/pp1ppppp/8/2p5/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2");
-    let (_, board) = parse(&fen).unwrap();
+    let board = parse(&fen).unwrap();
 
     let expected = Board::empty()
         .with_color_to_move(BLACK)
