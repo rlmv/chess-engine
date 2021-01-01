@@ -489,6 +489,10 @@ impl Board {
     }
 
     pub fn find_next_move(&self, depth: u8) -> Result<Option<(Move, Score)>> {
+        self._find_next_move(depth, &TraversalPath::head())
+    }
+
+    fn _find_next_move(&self, depth: u8, path: &TraversalPath) -> Result<Option<(Move, Score)>> {
         // Find all pieces
         // Generate all valid moves for those pieces.
         // After each move, must not be in check - prune.
@@ -505,12 +509,17 @@ impl Board {
 
         for (piece, square) in pieces.iter() {
             for to_square in self.possible_moves(*square, false)? {
+                let mv = Move {
+                    from: *square,
+                    to: to_square,
+                };
+
                 info!(
-                    "{}: Evaluating move {} from {} to {}",
+                    "{}: Evaluating move {} {} (from {})",
                     self.color_to_move,
                     square_symbol(piece),
-                    square,
-                    to_square
+                    mv,
+                    path
                 );
 
                 let moved_board = self.move_piece(*square, to_square)?;
@@ -528,7 +537,14 @@ impl Board {
                 let score = if depth == 1 {
                     moved_board.evaluate_position()?
                 } else {
-                    match (moved_board.find_next_move(depth - 1)?, self.color_to_move) {
+                    match (
+                        moved_board._find_next_move(
+                            depth - 1,
+                            // TODO
+                            &TraversalPath::Node(path, &mv),
+                        )?,
+                        self.color_to_move,
+                    ) {
                         (Some((_, score)), _) => score,
                         // No moves, checkmate
                         // TODO: check stalemate.
@@ -537,13 +553,7 @@ impl Board {
                     }
                 };
 
-                valid_moves.push((
-                    Move {
-                        from: *square,
-                        to: to_square,
-                    },
-                    score,
-                ));
+                valid_moves.push((mv, score));
             }
         }
 
@@ -658,6 +668,43 @@ fn square_symbol(p: &Piece) -> char {
     }
 }
 
+// Linked list containing the current path to the root in the minimax tree
+// traversal
+#[derive(Debug, PartialEq, Eq)]
+enum TraversalPath<'a> {
+    Head,
+    Node(&'a TraversalPath<'a>, &'a Move),
+}
+
+impl TraversalPath<'_> {
+    fn head() -> Self {
+        TraversalPath::Head
+    }
+
+    // fn push<'a>(&<'a> + self, mv: Move) -> Self {
+    //     TraversalPath::Node(self, mv)
+    // }
+
+    fn fold_left<T>(&self, zero: T, f: fn(accum: T, mv: &Move) -> T) -> T {
+        match self {
+            TraversalPath::Head => zero,
+            TraversalPath::Node(next, mv) => f(next.fold_left(zero, f), mv),
+        }
+    }
+}
+
+impl fmt::Display for TraversalPath<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = self.fold_left(String::new(), |mut accum, mv| {
+            accum.extend(mv.to_string().chars());
+            accum.extend(" ".chars());
+            accum
+        });
+
+        write!(f, "{}", s)
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Move {
     pub from: Square,
@@ -667,6 +714,12 @@ pub struct Move {
 impl Move {
     pub fn new(from: Square, to: Square) -> Self {
         Move { from: from, to: to }
+    }
+}
+
+impl fmt::Display for Move {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}{}", self.from, self.to)
     }
 }
 
