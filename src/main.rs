@@ -1,36 +1,45 @@
-use chess_engine::board::*;
 use chess_engine::color::*;
+use chess_engine::fen;
 use chess_engine::file::*;
 use chess_engine::rank::*;
 use chess_engine::square::*;
 
+use std::env;
+
+const DEFAULT_DEPTH: u8 = 3;
+
 fn main() {
     env_logger::init();
 
-    let b = Board::empty()
-        .place_piece(Piece(PAWN, WHITE), Square::new(File::A, Rank::_2))
-        .place_piece(Piece(KNIGHT, WHITE), Square::new(File::B, Rank::_1))
-        .place_piece(Piece(BISHOP, WHITE), Square::new(File::C, Rank::_1))
-        .place_piece(Piece(KING, WHITE), Square::new(File::E, Rank::_1))
-        .place_piece(Piece(BISHOP, BLACK), Square::new(File::C, Rank::_8))
-        .place_piece(Piece(KING, BLACK), Square::new(File::E, Rank::_8));
+    let args: Vec<String> = env::args().collect();
+    let mut args_iter = args.iter();
 
-    println!("{}", b);
-    println!(
-        "{}",
-        b.move_piece(
-            Square::new(File::A, Rank::_2),
-            Square::new(File::A, Rank::_4)
-        )
-        .unwrap()
-    );
+    //    println!("Arguments: {:?}", args);
 
-    let b2 = Board::empty()
-        .place_piece(Piece(ROOK, WHITE), Square::new(File::A, Rank::_2))
-        .place_piece(Piece(KING, WHITE), Square::new(File::E, Rank::_1))
-        .place_piece(Piece(ROOK, BLACK), Square::new(File::C, Rank::_8))
-        .place_piece(Piece(KING, BLACK), Square::new(File::E, Rank::_8));
+    let _ = args_iter.next(); // Drop binary name
 
-    println!("{}", b2);
-    println!("{:?}", b2.find_next_move(1).unwrap());
+    let board = if let Some(fen) = args_iter.next() {
+        fen::parse(fen).unwrap()
+    } else {
+        panic!("Expected a FEN string");
+    };
+
+    let depth: u8 = args_iter
+        .next()
+        .map(|s| s.parse().unwrap())
+        .unwrap_or(DEFAULT_DEPTH);
+
+    println!("Parsed board: \n\n{}\n", board);
+    println!("Searching for best move to depth {}...\n", depth);
+
+    let mv = board.find_next_move(depth).unwrap();
+
+    match mv {
+        None => println!("No move found. In checkmate?"),
+        Some(mv) => {
+            println!("Done. Best move is {}{}\n", mv.from, mv.to);
+            let moved_board = board.move_piece(mv.from, mv.to).unwrap();
+            println!("{}\n", moved_board);
+        }
+    }
 }

@@ -651,8 +651,8 @@ fn square_symbol(p: &Piece) -> char {
 
 #[derive(Clone, Copy, Debug)]
 pub struct Move {
-    from: Square,
-    to: Square,
+    pub from: Square,
+    pub to: Square,
     score: i32,
 }
 
