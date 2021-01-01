@@ -1,5 +1,4 @@
 use core::cmp::Ordering;
-use regex::Regex;
 use std::convert::TryFrom;
 use std::fmt;
 
@@ -58,21 +57,7 @@ impl TryFrom<&str> for Square {
     type Error = BoardError;
 
     fn try_from(s: &str) -> Result<Self> {
-        let re = Regex::new(r"^([A-H])([1-8])$")?;
-
-        let capture = match re.captures_iter(s).next() {
-            Some(capture) => capture,
-            None => {
-                return Err(BoardError::ParseError(format!(
-                    "Could not parse {} as a square",
-                    s
-                )))
-            }
-        };
-        Ok(Square::new(
-            File::from_str(&capture[1]),
-            Rank::from_str(&capture[2]),
-        ))
+        crate::fen::parse_square(s)
     }
 }
 

@@ -1,8 +1,4 @@
-use chess_engine::color::*;
 use chess_engine::fen;
-use chess_engine::file::*;
-use chess_engine::rank::*;
-use chess_engine::square::*;
 
 use std::env;
 

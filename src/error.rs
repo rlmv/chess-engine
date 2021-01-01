@@ -1,4 +1,3 @@
-use regex;
 use std::fmt;
 
 use crate::square::Square;
@@ -24,9 +23,9 @@ impl fmt::Display for BoardError {
     }
 }
 
-impl From<regex::Error> for BoardError {
-    // TODO: chain errors
-    fn from(re: regex::Error) -> Self {
-        BoardError::ParseError(format!("{:?}", re))
-    }
-}
+// impl From<regex::Error> for BoardError {
+//     // TODO: chain errors
+//     fn from(re: regex::Error) -> Self {
+//         BoardError::ParseError(format!("{:?}", re))
+//     }
+// }

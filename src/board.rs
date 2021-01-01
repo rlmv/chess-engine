@@ -6,7 +6,6 @@ use crate::color::*;
 use crate::constants::*;
 use crate::error::BoardError;
 use crate::error::BoardError::*;
-use crate::fen;
 use crate::file::*;
 use crate::rank::*;
 use crate::square::*;
@@ -1180,7 +1179,8 @@ impl Puzzle {
 #[test]
 fn test_puzzle_grab_bishop_and_knight() {
     init();
-    let board = fen::parse("1kr4r/1p2qp2/p2p1p1p/4p3/4P3/1b2Q3/nPPRBPPP/1K5R w - - 0 19").unwrap();
+    let board =
+        crate::fen::parse("1kr4r/1p2qp2/p2p1p1p/4p3/4P3/1b2Q3/nPPRBPPP/1K5R w - - 0 19").unwrap();
 
     Puzzle::new(board)
         .should_find_move(square("E3"), square("B3"))

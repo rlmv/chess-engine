@@ -49,7 +49,7 @@ impl File {
     pub fn from_str(s: &str) -> Self {
         use File::*;
 
-        match s {
+        match &*s.to_ascii_uppercase() {
             "A" => A,
             "B" => B,
             "C" => C,

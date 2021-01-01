@@ -1,9 +1,12 @@
+use std::convert::TryFrom;
+
 use crate::board::*;
 use crate::color::*;
 use crate::error::BoardError;
+use crate::file::*;
+use crate::rank::*;
 use crate::square::*;
 use log::{debug, error};
-use std::convert::TryFrom;
 
 use nom::{
     branch::alt,
@@ -23,7 +26,6 @@ enum ParseResult {
 }
 
 impl ParseResult {
-    // TODO - can something in NOM do this?
     fn spaces(c: char) -> std::result::Result<ParseResult, std::num::ParseIntError> {
         String::from(c).parse().map(ParseResult::Spaces)
     }
@@ -127,13 +129,7 @@ fn fen_parser(fen: &str) -> IResult<&str, Board> {
     // en passant
 
     let (input, en_passant_target) = terminated(
-        alt((
-            map_res(pair(one_of("abcdefgh"), one_of("12345678")), |(f, r)| {
-                let s = format!("{}{}", f, r);
-                Square::try_from(&*s).map(Some)
-            }),
-            map(complete::char('-'), |_| None),
-        )),
+        alt((map(square_parser, Some), map(complete::char('-'), |_| None))),
         space1,
     )(input)?;
 
@@ -158,6 +154,25 @@ fn fen_parser(fen: &str) -> IResult<&str, Board> {
             .with_fullmove_clock(fullmove_clock)
             .with_castle_rights(castling_rights),
     ))
+}
+
+fn square_parser(input: &str) -> IResult<&str, Square> {
+    map(
+        pair(one_of("abcdefghABCDEFGH"), one_of("12345678")),
+        |(f, r)| {
+            Square::new(
+                File::from_str(&*f.to_string()),
+                Rank::from_str(&*r.to_string()),
+            )
+        },
+    )(input)
+}
+
+pub fn parse_square(input: &str) -> Result<Square> {
+    square_parser(input)
+        .finish()
+        .map(|(_, b)| b)
+        .map_err(|e| BoardError::ParseError(format!("Could not parse square '{}': {}", input, e)))
 }
 
 #[cfg(test)]
@@ -220,6 +235,56 @@ fn test_parse_start_position() {
 }
 
 #[test]
+fn test_parse_start_e4() {
+    init();
+
+    let fen = String::from("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1");
+    let board = parse(&fen).unwrap();
+
+    let expected = Board::empty()
+        .with_color_to_move(BLACK)
+        .with_fullmove_clock(1)
+        .with_halfmove_clock(0)
+        .with_en_passant_target(Some(square("e3")))
+        .with_castle_rights(CastleRights::all())
+        .place_piece(Piece(ROOK, BLACK), square("A8"))
+        .place_piece(Piece(KNIGHT, BLACK), square("B8"))
+        .place_piece(Piece(BISHOP, BLACK), square("C8"))
+        .place_piece(Piece(QUEEN, BLACK), square("D8"))
+        .place_piece(Piece(KING, BLACK), square("E8"))
+        .place_piece(Piece(BISHOP, BLACK), square("F8"))
+        .place_piece(Piece(KNIGHT, BLACK), square("G8"))
+        .place_piece(Piece(ROOK, BLACK), square("H8"))
+        .place_piece(Piece(PAWN, BLACK), square("A7"))
+        .place_piece(Piece(PAWN, BLACK), square("B7"))
+        .place_piece(Piece(PAWN, BLACK), square("C7"))
+        .place_piece(Piece(PAWN, BLACK), square("D7"))
+        .place_piece(Piece(PAWN, BLACK), square("E7"))
+        .place_piece(Piece(PAWN, BLACK), square("F7"))
+        .place_piece(Piece(PAWN, BLACK), square("G7"))
+        .place_piece(Piece(PAWN, BLACK), square("H7"))
+        .place_piece(Piece(PAWN, WHITE), square("A2"))
+        .place_piece(Piece(PAWN, WHITE), square("B2"))
+        .place_piece(Piece(PAWN, WHITE), square("C2"))
+        .place_piece(Piece(PAWN, WHITE), square("D2"))
+        .place_piece(Piece(PAWN, WHITE), square("E4"))
+        .place_piece(Piece(PAWN, WHITE), square("F2"))
+        .place_piece(Piece(PAWN, WHITE), square("G2"))
+        .place_piece(Piece(PAWN, WHITE), square("H2"))
+        .place_piece(Piece(ROOK, WHITE), square("A1"))
+        .place_piece(Piece(KNIGHT, WHITE), square("B1"))
+        .place_piece(Piece(BISHOP, WHITE), square("C1"))
+        .place_piece(Piece(QUEEN, WHITE), square("D1"))
+        .place_piece(Piece(KING, WHITE), square("E1"))
+        .place_piece(Piece(BISHOP, WHITE), square("F1"))
+        .place_piece(Piece(KNIGHT, WHITE), square("G1"))
+        .place_piece(Piece(ROOK, WHITE), square("H1"));
+
+    assert_eq!(board, expected);
+}
+
+#[test]
+#[allow(non_snake_case)]
 fn test_parse_start_e4_c5_Nf3() {
     init();
 
