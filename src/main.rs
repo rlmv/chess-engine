@@ -32,7 +32,7 @@ fn main() {
 
     match mv {
         None => println!("No move found. In checkmate?"),
-        Some(mv) => {
+        Some((mv, _)) => {
             println!("Done. Best move is {}{}\n", mv.from, mv.to);
             let moved_board = board.move_piece(mv.from, mv.to).unwrap();
             println!("{}\n", moved_board);

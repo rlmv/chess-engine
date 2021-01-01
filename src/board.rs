@@ -1,3 +1,4 @@
+use core::cmp::Ordering;
 use log::info;
 use std::convert::TryFrom;
 use std::fmt;
@@ -487,7 +488,7 @@ impl Board {
         pieces
     }
 
-    pub fn find_next_move(&self, depth: u8) -> Result<Option<Move>> {
+    pub fn find_next_move(&self, depth: u8) -> Result<Option<(Move, Score)>> {
         // Find all pieces
         // Generate all valid moves for those pieces.
         // After each move, must not be in check - prune.
@@ -500,7 +501,7 @@ impl Board {
 
         let pieces = self.all_pieces_of_color(self.color_to_move);
 
-        let mut valid_moves: Vec<Move> = Vec::new();
+        let mut valid_moves: Vec<(Move, Score)> = Vec::new();
 
         for (piece, square) in pieces.iter() {
             for to_square in self.possible_moves(*square, false)? {
@@ -528,25 +529,34 @@ impl Board {
                     moved_board.evaluate_position()?
                 } else {
                     match (moved_board.find_next_move(depth - 1)?, self.color_to_move) {
-                        (Some(mv), _) => mv.score,
+                        (Some((_, score)), _) => score,
                         // No moves, checkmate
-                        (None, WHITE) => i32::MAX,
-                        (None, BLACK) => i32::MIN,
+                        // TODO: check stalemate.
+                        (None, WHITE) => Score(i32::MAX),
+                        (None, BLACK) => Score(i32::MIN),
                     }
                 };
 
-                valid_moves.push(Move {
-                    from: *square,
-                    to: to_square,
-                    score: score,
-                })
+                valid_moves.push((
+                    Move {
+                        from: *square,
+                        to: to_square,
+                    },
+                    score,
+                ));
             }
         }
 
         // Find best move
         match self.color_to_move {
-            WHITE => Ok(valid_moves.iter().max_by_key(|m| m.score).map(|m| *m)),
-            BLACK => Ok(valid_moves.iter().min_by_key(|m| m.score).map(|m| *m)),
+            WHITE => Ok(valid_moves
+                .iter()
+                .max_by_key(|(_, score)| score)
+                .map(|m| *m)),
+            BLACK => Ok(valid_moves
+                .iter()
+                .min_by_key(|(_, score)| score)
+                .map(|m| *m)),
         }
     }
 
@@ -555,13 +565,13 @@ impl Board {
      *
      * Positive values favor white, negative favor black.
      */
-    fn evaluate_position(&self) -> Result<i32> {
+    fn evaluate_position(&self) -> Result<Score> {
         if self.checkmate(BLACK)? {
             info!("Found checkmate of {}", BLACK);
-            return Ok(i32::MAX);
+            return Ok(Score(i32::MAX));
         } else if self.checkmate(WHITE)? {
             info!("Found checkmate of {}", WHITE);
-            return Ok(i32::MIN);
+            return Ok(Score(i32::MIN));
         }
 
         let white_value: i32 = self
@@ -575,7 +585,7 @@ impl Board {
             .map(|(p, _)| p.value())
             .sum();
 
-        Ok(white_value - black_value)
+        Ok(Score(white_value - black_value))
     }
 
     fn checkmate(&self, color: Color) -> Result<bool> {
@@ -648,11 +658,33 @@ fn square_symbol(p: &Piece) -> char {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Move {
     pub from: Square,
     pub to: Square,
-    score: i32,
+}
+
+impl Move {
+    pub fn new(from: Square, to: Square) -> Self {
+        Move { from: from, to: to }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Score(i32);
+
+impl Ord for Score {
+    fn cmp(&self, other: &Self) -> Ordering {
+        let &Score(i) = self;
+        let &Score(j) = other;
+        i.cmp(&j)
+    }
+}
+
+impl PartialOrd for Score {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
 #[cfg(test)]
@@ -1010,10 +1042,12 @@ fn test_checkmate_opponent_twin_rooks() {
 
     println!("{}", board);
 
-    let mv = board.find_next_move(1).unwrap().unwrap();
+    let (mv, _) = board.find_next_move(1).unwrap().unwrap();
 
-    assert_eq!(mv.from, Square(File::C, Rank::_1));
-    assert_eq!(mv.to, Square(File::A, Rank::_1));
+    assert_eq!(
+        mv,
+        Move::new(Square(File::C, Rank::_1), Square(File::A, Rank::_1))
+    );
 }
 
 #[test]
@@ -1027,10 +1061,12 @@ fn test_checkmate_opponent_king_and_rook() {
 
     println!("{}", board);
 
-    let mv = board.find_next_move(1).unwrap().unwrap();
+    let (mv, _) = board.find_next_move(1).unwrap().unwrap();
 
-    assert_eq!(mv.from, Square(File::C, Rank::_1));
-    assert_eq!(mv.to, Square(File::C, Rank::_8));
+    assert_eq!(
+        mv,
+        Move::new(Square(File::C, Rank::_1), Square(File::C, Rank::_8))
+    );
 }
 
 #[test]
@@ -1044,16 +1080,16 @@ fn test_checkmate_opponent_king_and_rook_2_moves() {
         .place_piece(Piece(KING, BLACK), square("H8"))
         .place_piece(Piece(ROOK, BLACK), square("F8"));
 
-    let mv = board1.find_next_move(3).unwrap().unwrap();
-    assert_eq!((mv.from, mv.to), (square("B7"), square("H7")));
+    let (mv, _) = board1.find_next_move(3).unwrap().unwrap();
+    assert_eq!(mv, Move::new(square("B7"), square("H7")));
 
     let board2 = board1.move_piece(mv.from, mv.to).unwrap();
 
     // Only move available
     let board3 = board2.move_piece(square("H8"), square("G8")).unwrap();
 
-    let mv3 = board3.find_next_move(3).unwrap().unwrap();
-    assert_eq!((mv3.from, mv3.to), (square("A7"), square("G7")));
+    let (mv3, _) = board3.find_next_move(3).unwrap().unwrap();
+    assert_eq!(mv3, Move::new(square("A7"), square("G7")));
 
     let board4 = board3.move_piece(mv3.from, mv3.to).unwrap();
     assert!(board4.checkmate(BLACK).unwrap());
@@ -1075,16 +1111,16 @@ fn test_checkmate_opponent_king_and_rook_2_moves_black_to_move() {
         .place_piece(Piece(KING, WHITE), square("H8"))
         .place_piece(Piece(ROOK, WHITE), square("F8"));
 
-    let mv = board1.find_next_move(3).unwrap().unwrap();
-    assert_eq!((mv.from, mv.to), (square("B7"), square("H7")));
+    let (mv, _) = board1.find_next_move(3).unwrap().unwrap();
+    assert_eq!(mv, Move::new(square("B7"), square("H7")));
 
     let board2 = board1.move_piece(mv.from, mv.to).unwrap();
 
     // Only move available
     let board3 = board2.move_piece(square("H8"), square("G8")).unwrap();
 
-    let mv3 = board3.find_next_move(3).unwrap().unwrap();
-    assert_eq!((mv3.from, mv3.to), (square("A7"), square("G7")));
+    let (mv3, _) = board3.find_next_move(3).unwrap().unwrap();
+    assert_eq!(mv3, Move::new(square("A7"), square("G7")));
 
     let board4 = board3.move_piece(mv3.from, mv3.to).unwrap();
     assert!(board4.checkmate(WHITE).unwrap());
@@ -1108,10 +1144,9 @@ fn test_capture_free_piece() {
 
     println!("{}", board);
 
-    let mv = board.find_next_move(3).unwrap().unwrap();
+    let (mv, _) = board.find_next_move(3).unwrap().unwrap();
 
-    assert_eq!(mv.from, square("A7"));
-    assert_eq!(mv.to, square("C7"));
+    assert_eq!(mv, Move::new(square("A7"), square("C7")));
 }
 
 #[test]
@@ -1148,9 +1183,8 @@ impl Puzzle {
     }
 
     fn should_find_move(&self, expect_from: Square, expect_to: Square) -> Self {
-        let found = self.board.find_next_move(3).unwrap().unwrap();
-        assert_eq!(found.from, expect_from);
-        assert_eq!(found.to, expect_to);
+        let (found, _) = self.board.find_next_move(3).unwrap().unwrap();
+        assert_eq!(found, Move::new(expect_from, expect_to));
 
         Self::new(self.board.move_piece(found.from, found.to).unwrap())
     }
