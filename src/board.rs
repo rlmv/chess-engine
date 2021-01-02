@@ -538,11 +538,7 @@ impl Board {
                     moved_board.evaluate_position()?
                 } else {
                     match (
-                        moved_board._find_next_move(
-                            depth - 1,
-                            // TODO
-                            &TraversalPath::Node(path, &mv),
-                        )?,
+                        moved_board._find_next_move(depth - 1, &path.append(&mv))?,
                         self.color_to_move,
                     ) {
                         (Some((_, score)), _) => score,
@@ -676,14 +672,14 @@ enum TraversalPath<'a> {
     Node(&'a TraversalPath<'a>, &'a Move),
 }
 
-impl TraversalPath<'_> {
+impl<'a> TraversalPath<'a> {
     fn head() -> Self {
         TraversalPath::Head
     }
 
-    // fn push<'a>(&<'a> + self, mv: Move) -> Self {
-    //     TraversalPath::Node(self, mv)
-    // }
+    fn append(&'a self, mv: &'a Move) -> Self {
+        TraversalPath::Node(self, mv)
+    }
 
     fn fold_left<T>(&self, zero: T, f: fn(accum: T, mv: &Move) -> T) -> T {
         match self {
