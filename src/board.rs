@@ -490,12 +490,13 @@ impl Board {
     }
 
     pub fn find_next_move(&self, depth: u8) -> Result<Option<(Move, Score)>> {
-        self._find_next_move(
+        let (mv, score) = self._find_next_move(
             depth,
             &TraversalPath::head(),
             Score(i32::MIN),
             Score(i32::MAX),
-        )
+        )?;
+        Ok(mv.map(|m| (m, score)))
     }
 
     fn _find_next_move(
@@ -504,7 +505,7 @@ impl Board {
         path: &TraversalPath,
         mut alpha: Score,
         mut beta: Score,
-    ) -> Result<Option<(Move, Score)>> {
+    ) -> Result<(Option<Move>, Score)> {
         // Find all pieces
         // Generate all valid moves for those pieces.
         // After each move, must not be in check - prune.
@@ -517,7 +518,7 @@ impl Board {
 
         let pieces = self.all_pieces_of_color(self.color_to_move);
 
-        let mut valid_moves: Vec<(Move, Score)> = Vec::new();
+        let mut valid_moves: Vec<(Option<Move>, Score)> = Vec::new();
 
         // info!(
         //     "{}: Evaluating position {} ",
@@ -527,87 +528,148 @@ impl Board {
         //     path
         // );
 
-        // if self.checkmate(self.color_to_move())? {
-        //     info!("Position is checkmate for {}", self.color_to_move());
+        if self.checkmate(self.color_to_move)? {
+            info!("Position is checkmate for {}", self.color_to_move);
 
-        //     return match self.color_to_move() {
-        //         WHITE => Ok(Score(i32::MIN)),
-        //         BLACK => Ok(Score(i32::MAX)),
-        //     }
-        // }
+            return match self.color_to_move {
+                WHITE => Ok((None, Score(i32::MIN))),
+                BLACK => Ok((None, Score(i32::MAX))),
+            };
+        }
 
-        'outer: for (piece, square) in pieces.iter() {
-            for to_square in self.possible_moves(*square, false)? {
-                let mv = Move {
-                    from: *square,
-                    to: to_square,
-                };
+        let all_moves: Vec<(Piece, Square, Square)> = pieces
+            .iter()
+            .flat_map(move |(piece, square)| {
+                self.possible_moves(*square, false)
+                    .unwrap() // TODO fix this
+                    .into_iter()
+                    .map(move |to_square| (piece.clone(), square.clone(), to_square.clone()))
+            })
+            .collect();
 
-                info!("{}: Evaluating move {}{}", self.color_to_move, path, mv);
+        info!(
+            "{}: {}: All moves for position: {:?}",
+            self.color_to_move,
+            path,
+            all_moves
+                .iter()
+                .map(|(_, from, to)| Move {
+                    from: *from,
+                    to: *to
+                })
+                .collect::<Vec<Move>>()
+        );
 
-                let moved_board = self.move_piece(*square, to_square)?;
+        let mut best_move: Option<Move> = None;
+        let mut best_score = match self.color_to_move {
+            WHITE => Score(i32::MIN),
+            BLACK => Score(i32::MAX),
+        };
 
-                // Cannot move into check. This helps verify that the position
-                // is not checkmate: if the recursive call below returns no
-                // moves then the position is mate
-                if moved_board.is_in_check(self.color_to_move)? {
-                    continue;
-                }
+        'outer: for (piece, square, to_square) in all_moves.iter() {
+            //            for to_square in self.possible_moves(*square, false)? {
+            let mv = Move {
+                from: *square,
+                to: *to_square,
+            };
 
-                // TODO: adjust the above for stalemate
+            info!(
+                "{}: Evaluating move {}{}. Initial α={} β={}",
+                self.color_to_move, path, mv, alpha, beta
+            );
 
-                // Evaluate board score at leaf nodes
-                let score = if depth == 1 {
-                    moved_board.evaluate_position()?
-                } else {
-                    match (
-                        moved_board._find_next_move(depth - 1, &path.append(&mv), alpha, beta)?,
-                        self.color_to_move,
-                    ) {
-                        (Some((_, score)), _) => score,
-                        // No moves, checkmate
-                        // TODO: check stalemate.
-                        (None, WHITE) => Score(i32::MAX),
-                        (None, BLACK) => Score(i32::MIN),
-                    }
-                };
+            let moved_board = self.move_piece(*square, *to_square)?;
 
-                valid_moves.push((mv, score));
-
-                match self.color_to_move {
-                    WHITE => alpha = cmp::max(alpha, score),
-                    BLACK => beta = cmp::min(beta, score),
-                }
-
+            // Cannot move into check. This helps verify that the position
+            // is not checkmate: if the recursive call below returns no
+            // moves then the position is mate
+            if moved_board.is_in_check(self.color_to_move)? {
                 info!(
-                    "{}: Evaluated move {} {} {} score={} α={} β={}",
-                    self.color_to_move,
-                    path,
-                    square_symbol(piece),
-                    mv,
-                    score,
-                    alpha,
-                    beta
+                    "{}: Continue. In check after move {}{}",
+                    self.color_to_move, path, mv
                 );
+                continue;
+            }
 
-                if alpha >= beta {
-                    info!("Found α={} >= β={}. Pruning rest of node.", alpha, beta);
-                    break 'outer;
+            // TODO: adjust the above for stalemate
+
+            // Evaluate board score at leaf nodes
+            let score = if depth == 1 {
+                moved_board.evaluate_position()?
+            } else {
+                match (
+                    moved_board._find_next_move(depth - 1, &path.append(&mv), alpha, beta)?,
+                    self.color_to_move,
+                ) {
+                    ((Some(_), score), _) => score,
+                    // No moves, checkmate
+                    // TODO: check stalemate.
+                    ((None, _), WHITE) => Score(i32::MAX),
+                    ((None, _), BLACK) => Score(i32::MIN),
+                }
+            };
+
+            valid_moves.push((Some(mv), score));
+
+            // Ensure that only *fully-searched* paths are returned. A pruned path could
+            // possibly be worse than the fully searched path. The alpha-beta bound guarantees
+            // that pruned subtrees are *equivalent to or worse than* the original search path.
+
+            match self.color_to_move {
+                WHITE => {
+                    alpha = cmp::max(alpha, score);
+                    if score > best_score {
+                        best_score = score;
+                        best_move = Some(mv)
+                    }
+                }
+                BLACK => {
+                    beta = cmp::min(beta, score);
+                    if score < best_score {
+                        best_score = score;
+                        best_move = Some(mv)
+                    }
                 }
             }
+
+            // match self.color_to_move {
+            //     WHITE => alpha = cmp::max(alpha, score),
+            //     BLACK => beta = cmp::min(beta, score),
+            // }
+
+            info!(
+                "{}: Evaluated move {} {} {} score={} α={} β={}",
+                self.color_to_move,
+                path,
+                square_symbol(piece),
+                mv,
+                score,
+                alpha,
+                beta
+            );
+
+            if alpha >= beta {
+                info!("Found α={} >= β={}. Pruning rest of node.", alpha, beta);
+                return Ok((Some(mv), score));
+            }
+            //            }
         }
 
-        // Find best move
-        match self.color_to_move {
-            WHITE => Ok(valid_moves
-                .iter()
-                .max_by_key(|(_, score)| score)
-                .map(|m| *m)),
-            BLACK => Ok(valid_moves
-                .iter()
-                .min_by_key(|(_, score)| score)
-                .map(|m| *m)),
-        }
+        Ok((best_move, best_score))
+
+        // // Find best move
+        // Ok(match self.color_to_move {
+        //     WHITE => valid_moves
+        //         .iter()
+        //         .max_by_key(|(_, score)| score)
+        //         .map(|(m, score)| (*m, *score))
+        //         .unwrap_or((None, Score(i32::MIN))), // Checkmate? TODO: correct? Or is this stalemate?
+        //     BLACK => valid_moves
+        //         .iter()
+        //         .min_by_key(|(_, score)| score)
+        //         .map(|(m, score)| (*m, *score))
+        //         .unwrap_or((None, Score(i32::MAX))),
+        // })
     }
 
     /*
