@@ -1,5 +1,6 @@
 use core::cmp::Ordering;
 use log::info;
+use std::cmp;
 use std::convert::TryFrom;
 use std::fmt;
 
@@ -489,10 +490,21 @@ impl Board {
     }
 
     pub fn find_next_move(&self, depth: u8) -> Result<Option<(Move, Score)>> {
-        self._find_next_move(depth, &TraversalPath::head())
+        self._find_next_move(
+            depth,
+            &TraversalPath::head(),
+            Score(i32::MIN),
+            Score(i32::MAX),
+        )
     }
 
-    fn _find_next_move(&self, depth: u8, path: &TraversalPath) -> Result<Option<(Move, Score)>> {
+    fn _find_next_move(
+        &self,
+        depth: u8,
+        path: &TraversalPath,
+        mut alpha: Score,
+        mut beta: Score,
+    ) -> Result<Option<(Move, Score)>> {
         // Find all pieces
         // Generate all valid moves for those pieces.
         // After each move, must not be in check - prune.
@@ -507,20 +519,31 @@ impl Board {
 
         let mut valid_moves: Vec<(Move, Score)> = Vec::new();
 
-        for (piece, square) in pieces.iter() {
+        // info!(
+        //     "{}: Evaluating position {} ",
+        //     self.color_to_move,
+        //     square_symbol(piece),
+        //     mv,
+        //     path
+        // );
+
+        // if self.checkmate(self.color_to_move())? {
+        //     info!("Position is checkmate for {}", self.color_to_move());
+
+        //     return match self.color_to_move() {
+        //         WHITE => Ok(Score(i32::MIN)),
+        //         BLACK => Ok(Score(i32::MAX)),
+        //     }
+        // }
+
+        'outer: for (piece, square) in pieces.iter() {
             for to_square in self.possible_moves(*square, false)? {
                 let mv = Move {
                     from: *square,
                     to: to_square,
                 };
 
-                info!(
-                    "{}: Evaluating move {} {} (from {})",
-                    self.color_to_move,
-                    square_symbol(piece),
-                    mv,
-                    path
-                );
+                info!("{}: Evaluating move {}{}", self.color_to_move, path, mv);
 
                 let moved_board = self.move_piece(*square, to_square)?;
 
@@ -538,7 +561,7 @@ impl Board {
                     moved_board.evaluate_position()?
                 } else {
                     match (
-                        moved_board._find_next_move(depth - 1, &path.append(&mv))?,
+                        moved_board._find_next_move(depth - 1, &path.append(&mv), alpha, beta)?,
                         self.color_to_move,
                     ) {
                         (Some((_, score)), _) => score,
@@ -550,6 +573,27 @@ impl Board {
                 };
 
                 valid_moves.push((mv, score));
+
+                match self.color_to_move {
+                    WHITE => alpha = cmp::max(alpha, score),
+                    BLACK => beta = cmp::min(beta, score),
+                }
+
+                info!(
+                    "{}: Evaluated move {} {} {} score={} α={} β={}",
+                    self.color_to_move,
+                    path,
+                    square_symbol(piece),
+                    mv,
+                    score,
+                    alpha,
+                    beta
+                );
+
+                if alpha >= beta {
+                    info!("Found α={} >= β={}. Pruning rest of node.", alpha, beta);
+                    break 'outer;
+                }
             }
         }
 
@@ -585,6 +629,7 @@ impl Board {
             .iter()
             .map(|(p, _)| p.value())
             .sum();
+
         let black_value: i32 = self
             .all_pieces_of_color(BLACK)
             .iter()
@@ -613,6 +658,8 @@ impl Board {
                 }
             }
         }
+
+        info!("{}: Found checkmate", color);
 
         Ok(true)
     }
@@ -733,6 +780,13 @@ impl Ord for Score {
 impl PartialOrd for Score {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
+    }
+}
+
+impl fmt::Display for Score {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let &Score(i) = self;
+        write!(f, "{}", i)
     }
 }
 
@@ -867,6 +921,28 @@ fn test_king_in_check() {
         .place_piece(Piece(ROOK, BLACK), Square(File::E, Rank::_5))
         .is_in_check(WHITE)
         .unwrap());
+}
+
+#[test]
+fn test_king_can_take_queen_to_escape_check() {
+    init();
+    let board = Board::empty()
+        .with_color_to_move(BLACK)
+        .place_piece(Piece(KING, BLACK), square("B8"))
+        .place_piece(Piece(QUEEN, WHITE), square("A7"));
+    // .is_in_check(WHITE)
+    // .unwrap());
+
+    assert!(board.is_in_check(BLACK).unwrap());
+
+    println!("{:?}", board.possible_moves(square("B8"), false).unwrap());
+
+    assert!(board
+        .possible_moves(square("B8"), false)
+        .unwrap()
+        .iter()
+        .find(|&&s| s == square("A7"))
+        .is_some());
 }
 
 #[test]
@@ -1232,7 +1308,7 @@ impl Puzzle {
     }
 
     fn should_find_move(&self, expect_from: Square, expect_to: Square) -> Self {
-        let (found, _) = self.board.find_next_move(3).unwrap().unwrap();
+        let (found, _) = self.board.find_next_move(4).unwrap().unwrap();
         assert_eq!(found, Move::new(expect_from, expect_to));
 
         Self::new(self.board.move_piece(found.from, found.to).unwrap())
@@ -1269,6 +1345,20 @@ fn test_puzzle_grab_bishop_and_knight() {
         .should_find_move(square("E3"), square("B3"))
         .respond_with(square("A2"), square("C3"))
         .should_find_move(square("B2"), square("C3"));
+}
+
+#[test]
+fn test_puzzle_grab_debug() {
+    init();
+    let board =
+        crate::fen::parse("1kr4r/1p2qp2/p2p1p1p/4p3/4P3/1b2Q3/nPPRBPPP/1K5R w - - 0 19").unwrap();
+
+    Puzzle::new(board.move_piece(square("E3"), square("A7")).unwrap())
+        .should_find_move(square("B8"), square("A7"));
+    // Puzzle::new(board)
+    //     .should_find_move(square("E3"), square("B3"))
+    //     .respond_with(square("A2"), square("C3"))
+    //     .should_find_move(square("B2"), square("C3"));
 }
 
 #[test]
