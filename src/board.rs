@@ -493,11 +493,11 @@ impl Board {
         let (mv, score, path) = self._find_next_move(
             depth,
             &TraversalPath::head(),
-            Score(i32::MIN),
-            Score(i32::MAX),
+            Score::MIN,
+            Score::MAX,
         )?;
 
-	println!("Main line score={}, path={:?}", score, path);
+        println!("Main line score={}, path={:?}", score, path);
         Ok(mv.map(|m| (m, score)))
     }
 
@@ -516,31 +516,30 @@ impl Board {
 
         // Evaluate stalemate?
 
-        assert!(depth > 0);
+        if depth == 0 {
+            return Ok((
+                None,
+                self.evaluate_position()?,
+                path.into()
+            ));
+        } else if self.checkmate(self.color_to_move)? {
+            info!("Position is checkmate for {}", self.color_to_move);
 
-        // if depth == 0 {
-        //     return Ok(None,  xboard.evaluate_position()?, 
-	// 	      moved_path.fold_left(Vec::new(), |mut v, mv| {v.push(*mv); v}))
-	// }
+            return match self.color_to_move {
+                WHITE => Ok((
+                    None,
+                    Score::MIN.plus(1),
+		    path.into()
+                )),
+                BLACK => Ok((
+                    None,
+                    Score::MAX.minus(1),
+		    path.into()
+                )),
+            };
+        }
 
         let pieces = self.all_pieces_of_color(self.color_to_move);
-
-        // info!(
-        //     "{}: Evaluating position {} ",
-        //     self.color_to_move,
-        //     square_symbol(piece),
-        //     mv,
-        //     path
-        // );
-
-        // if self.checkmate(self.color_to_move)? {
-        //     info!("Position is checkmate for {}", self.color_to_move);
-
-        //     return match self.color_to_move {
-        //         WHITE => Ok((None, Score(i32::MIN))),
-        //         BLACK => Ok((None, Score(i32::MAX))),
-        //     };
-        // }
 
         let all_moves: Vec<(Piece, Square, Square)> = pieces
             .iter()
@@ -567,25 +566,25 @@ impl Board {
 
         let mut best_move: Option<Move> = None;
         let mut best_score = match self.color_to_move {
-            WHITE => Score(i32::MIN),
-            BLACK => Score(i32::MAX),
+            WHITE => Score::MIN,
+            BLACK => Score::MAX,
         };
-	let mut best_path: Vec<Move> = path.fold_left(Vec::new(), |mut v, mv| {v.push(*mv); v});
+        let mut best_path: Vec<Move> = path.into();
 
         for (piece, square, to_square) in all_moves.iter() {
-            //            for to_square in self.possible_moves(*square, false)? {
             let mv = Move {
                 from: *square,
                 to: *to_square,
             };
 
+            let moved_board = self.move_piece(*square, *to_square)?;
+            let moved_path = path.append(&mv);
+
             info!(
-                "{}: Evaluating move {}{}. Initial α={} β={}",
-                self.color_to_move, path, mv, alpha, beta
+                "{}: Evaluating move {}. Initial α={} β={}",
+                self.color_to_move, moved_path, alpha, beta
             );
 
-            let moved_board = self.move_piece(*square, *to_square)?;
-	    let moved_path = path.append(&mv);
 
             // Cannot move into check. This helps verify that the position
             // is not checkmate: if the recursive call below returns no
@@ -593,7 +592,7 @@ impl Board {
             if moved_board.is_in_check(self.color_to_move)? {
                 info!(
                     "{}: Continue. In check after move {}{}",
-                    self.color_to_move, path, mv
+                    self.color_to_move, moved_path, mv
                 );
                 continue;
             }
@@ -601,20 +600,8 @@ impl Board {
             // TODO: adjust the above for stalemate
 
             // Evaluate board score at leaf nodes
-            let (score, mainline) = if depth == 1 {
-                (moved_board.evaluate_position()?, moved_path.fold_left(Vec::new(), |mut v, mv| {v.push(*mv); v}))
-            } else {
-                match (
-                    moved_board._find_next_move(depth - 1, &moved_path, alpha, beta)?,
-                    self.color_to_move,
-                ) {
-                    ((Some(_), score, mainline), _) => (score, mainline),
-                    // No moves, checkmate
-                    // TODO: check stalemate.
-                    ((None, _, mainline), WHITE) => (Score(i32::MAX), mainline),
-                    ((None, _, mainline), BLACK) => (Score(i32::MIN), mainline),
-                }
-            };
+            let (_, score, mainline) =
+                moved_board._find_next_move(depth - 1, &moved_path, alpha, beta)?;
 
             // Ensure that only *fully-searched* paths are returned. A pruned path could
             // possibly be worse than the fully searched path. The alpha-beta bound guarantees
@@ -626,7 +613,7 @@ impl Board {
                     if score > best_score {
                         best_score = score;
                         best_move = Some(mv);
-			best_path = mainline.clone();
+                        best_path = mainline.clone();
                     }
                 }
                 BLACK => {
@@ -634,15 +621,10 @@ impl Board {
                     if score < best_score {
                         best_score = score;
                         best_move = Some(mv);
-			best_path = mainline.clone();			    
+                        best_path = mainline.clone();
                     }
                 }
             }
-
-            // match self.color_to_move {
-            //     WHITE => alpha = cmp::max(alpha, score),
-            //     BLACK => beta = cmp::min(beta, score),
-            // }
 
             info!(
                 "{}: Evaluated move {} {} {} score={} α={} β={}",
@@ -673,10 +655,10 @@ impl Board {
     fn evaluate_position(&self) -> Result<Score> {
         if self.checkmate(BLACK)? {
             info!("Found checkmate of {}", BLACK);
-            return Ok(Score(i32::MAX));
+            return Ok(Score::MAX.minus(1));
         } else if self.checkmate(WHITE)? {
             info!("Found checkmate of {}", WHITE);
-            return Ok(Score(i32::MIN));
+            return Ok(Score::MIN.plus(1));
         }
 
         let white_value: i32 = self
@@ -791,6 +773,15 @@ impl<'a> TraversalPath<'a> {
     }
 }
 
+impl Into<Vec<Move>> for &TraversalPath<'_> {
+    fn into(self) -> Vec<Move> {
+        self.fold_left(Vec::new(), |mut v, mv| {
+            v.push(*mv);
+            v
+        })
+    }
+}
+
 impl fmt::Display for TraversalPath<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = self.fold_left(String::new(), |mut accum, mv| {
@@ -823,6 +814,24 @@ impl fmt::Display for Move {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Score(i32);
+
+impl Score {
+
+    pub const MAX: Score = Score(i32::MAX);
+    pub const MIN: Score = Score(i32::MIN);
+
+    fn minus(&self, x: i32) -> Score {
+	let Score(y) = self;
+	Score(y - x)
+    }
+
+    fn plus(&self, x: i32) -> Score {
+	let Score(y) = self;
+	Score(y + x)
+    }
+    
+
+}
 
 impl Ord for Score {
     fn cmp(&self, other: &Self) -> Ordering {
