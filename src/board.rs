@@ -490,12 +490,8 @@ impl Board {
     }
 
     pub fn find_next_move(&self, depth: u8) -> Result<Option<(Move, Score)>> {
-        let (mv, score, path) = self._find_next_move(
-            depth,
-            &TraversalPath::head(),
-            Score::MIN,
-            Score::MAX,
-        )?;
+        let (mv, score, path) =
+            self._find_next_move(depth, &TraversalPath::head(), Score::MIN, Score::MAX)?;
 
         println!("Main line score={}, path={:?}", score, path);
         Ok(mv.map(|m| (m, score)))
@@ -517,25 +513,13 @@ impl Board {
         // Evaluate stalemate?
 
         if depth == 0 {
-            return Ok((
-                None,
-                self.evaluate_position()?,
-                path.into()
-            ));
+            return Ok((None, self.evaluate_position()?, path.into()));
         } else if self.checkmate(self.color_to_move)? {
             info!("Position is checkmate for {}", self.color_to_move);
 
             return match self.color_to_move {
-                WHITE => Ok((
-                    None,
-                    Score::MIN.plus(1),
-		    path.into()
-                )),
-                BLACK => Ok((
-                    None,
-                    Score::MAX.minus(1),
-		    path.into()
-                )),
+                WHITE => Ok((None, Score::MIN.plus(1), path.into())),
+                BLACK => Ok((None, Score::MAX.minus(1), path.into())),
             };
         }
 
@@ -584,7 +568,6 @@ impl Board {
                 "{}: Evaluating move {}. Initial α={} β={}",
                 self.color_to_move, moved_path, alpha, beta
             );
-
 
             // Cannot move into check. This helps verify that the position
             // is not checkmate: if the recursive call below returns no
@@ -816,21 +799,18 @@ impl fmt::Display for Move {
 pub struct Score(i32);
 
 impl Score {
-
     pub const MAX: Score = Score(i32::MAX);
     pub const MIN: Score = Score(i32::MIN);
 
     fn minus(&self, x: i32) -> Score {
-	let Score(y) = self;
-	Score(y - x)
+        let Score(y) = self;
+        Score(y - x)
     }
 
     fn plus(&self, x: i32) -> Score {
-	let Score(y) = self;
-	Score(y + x)
+        let Score(y) = self;
+        Score(y + x)
     }
-    
-
 }
 
 impl Ord for Score {
