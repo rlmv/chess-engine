@@ -1,7 +1,6 @@
 use core::cmp::Ordering;
 use log::info;
 use std::cmp;
-use std::convert::TryFrom;
 use std::fmt;
 
 use crate::color::*;
@@ -191,7 +190,7 @@ impl Board {
     }
 
     fn is_occupied(&self, square: usize) -> bool {
-        Piece::from(self.board[square]).is_some()
+        !self.is_empty(square)
     }
 
     fn is_empty(&self, square: usize) -> bool {

@@ -12,7 +12,7 @@ use crate::rank::*;
 type Result<T> = std::result::Result<T, BoardError>;
 
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
-pub struct Square(pub File, pub Rank);
+pub struct Square(File, Rank);
 
 impl Square {
     pub fn new(file: File, rank: Rank) -> Square {
@@ -149,14 +149,14 @@ impl fmt::Display for Square {
 
 #[test]
 fn test_parse_square() {
-    assert_eq!(Square::try_from("A1").unwrap(), Square(File::A, Rank::_1));
-    assert_eq!(Square::try_from("B2").unwrap(), Square(File::B, Rank::_2));
-    assert_eq!(Square::try_from("C3").unwrap(), Square(File::C, Rank::_3));
-    assert_eq!(Square::try_from("D4").unwrap(), Square(File::D, Rank::_4));
-    assert_eq!(Square::try_from("E5").unwrap(), Square(File::E, Rank::_5));
-    assert_eq!(Square::try_from("F6").unwrap(), Square(File::F, Rank::_6));
-    assert_eq!(Square::try_from("G7").unwrap(), Square(File::G, Rank::_7));
-    assert_eq!(Square::try_from("H8").unwrap(), Square(File::H, Rank::_8));
+    assert_eq!(Square::try_from("A1").unwrap(), A1);
+    assert_eq!(Square::try_from("B2").unwrap(), B2);
+    assert_eq!(Square::try_from("C3").unwrap(), C3);
+    assert_eq!(Square::try_from("D4").unwrap(), D4);
+    assert_eq!(Square::try_from("E5").unwrap(), E5);
+    assert_eq!(Square::try_from("F6").unwrap(), F6);
+    assert_eq!(Square::try_from("G7").unwrap(), G7);
+    assert_eq!(Square::try_from("H8").unwrap(), H8);
 
     assert!(Square::try_from("I8").is_err());
 }

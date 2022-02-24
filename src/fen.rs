@@ -1,5 +1,3 @@
-use std::convert::TryFrom;
-
 use crate::board::*;
 use crate::color::*;
 use crate::error::BoardError;
