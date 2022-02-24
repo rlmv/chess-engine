@@ -1,11 +1,18 @@
 use chess_engine::fen;
+use chess_engine::uci;
 
 use std::env;
+
+use log::error;
+use log::LevelFilter;
+use log4rs::append::console::{ConsoleAppender, Target};
+use log4rs::append::file::FileAppender;
+use log4rs::config::{Appender, Config, Root};
 
 const DEFAULT_DEPTH: u8 = 3;
 
 fn main() {
-    env_logger::init();
+    configure_logging();
 
     let args: Vec<String> = env::args().collect();
     let mut args_iter = args.iter();
@@ -14,16 +21,64 @@ fn main() {
 
     let _ = args_iter.next(); // Drop binary name
 
-    let board = if let Some(fen) = args_iter.next() {
-        fen::parse(fen).unwrap()
-    } else {
-        panic!("Expected a FEN string");
-    };
-
-    let depth: u8 = args_iter
+    let command = args_iter
         .next()
-        .map(|s| s.parse().unwrap())
-        .unwrap_or(DEFAULT_DEPTH);
+        .map(|command| command.to_lowercase())
+        .map(|command| {
+            if command == "fen" {
+                Command::FEN
+            } else if command == "uci" {
+                Command::UCI
+            } else {
+                panic!("Did not recognize CLI command {}", command)
+            }
+        });
+
+    match command {
+        Some(Command::FEN) => {
+            if let Some(fen) = args_iter.next() {
+                let depth: u8 = args_iter
+                    .next()
+                    .map(|s| s.parse().unwrap())
+                    .unwrap_or(DEFAULT_DEPTH);
+                evaluate_fen(fen, depth)
+            } else {
+                panic!("Expected a FEN string");
+            }
+        }
+        Some(Command::UCI) => uci::run_uci().map_err(|e| error!("{}", e)).unwrap(),
+        None => panic!("No command provided"),
+    };
+}
+
+enum Command {
+    UCI,
+    FEN,
+}
+
+fn configure_logging() -> () {
+    let stderr = ConsoleAppender::builder().target(Target::Stderr).build();
+
+    let file = FileAppender::builder()
+        .build("/home/bo/.scidvspc/log/internal.log")
+        .unwrap();
+
+    let config = Config::builder()
+        //        .appender(Appender::builder().build("stderr", Box::new(stderr)))
+        .appender(Appender::builder().build("file", Box::new(file)))
+        .build(
+            Root::builder()
+                //                .appender("stderr")
+                .appender("file")
+                .build(LevelFilter::Debug),
+        )
+        .unwrap();
+
+    log4rs::init_config(config).unwrap();
+}
+
+fn evaluate_fen(fen: &String, depth: u8) -> () {
+    let board = fen::parse(fen).unwrap();
 
     println!("Parsed board: \n\n{}\n", board);
     println!("Searching for best move to depth {}...\n", depth);

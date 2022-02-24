@@ -10,6 +10,8 @@ pub enum BoardError {
     NotImplemented,
     IllegalState(String),
     ParseError(String),
+    IOError(String),
+    ProtocolError(String),
 }
 
 impl fmt::Display for BoardError {
@@ -19,6 +21,8 @@ impl fmt::Display for BoardError {
             NotImplemented => write!(f, "Missing implementation"),
             IllegalState(msg) => write!(f, "{}", msg),
             ParseError(msg) => write!(f, "{}", msg),
+            IOError(msg) => write!(f, "{}", msg),
+            ProtocolError(msg) => write!(f, "{}", msg),
         }
     }
 }

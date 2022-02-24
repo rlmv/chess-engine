@@ -65,7 +65,7 @@ pub fn parse(fen: &str) -> Result<Board> {
  * https://en.wikipedia.org/wiki/Forsyth%E2%80%93Edwards_Notation
  * https://ia802908.us.archive.org/26/items/pgn-standard-1994-03-12/PGN_standard_1994-03-12.txt
  */
-fn fen_parser(fen: &str) -> IResult<&str, Board> {
+pub fn fen_parser(fen: &str) -> IResult<&str, Board> {
     debug!("Parsing FEN: {}", fen);
 
     let pieces = map(one_of("rnbkqpRNBKQP"), ParseResult::piece);

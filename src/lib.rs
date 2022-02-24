@@ -6,4 +6,5 @@ pub mod fen;
 pub mod file;
 pub mod rank;
 pub mod square;
+pub mod uci;
 pub mod vector;
