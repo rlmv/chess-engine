@@ -131,7 +131,7 @@ impl Board {
             en_passant_target: None,
             halfmove_clock: 0,
             fullmove_clock: 1,
-            can_castle: CastleRights::all(),
+            can_castle: CastleRights::none(),
         }
     }
 
@@ -171,6 +171,37 @@ impl Board {
         new
     }
 
+    pub fn make_move(&self, mv: Move) -> Result<Board> {
+        let mut new = match mv {
+            Move::Single { from, to } => self.move_piece(from, to),
+            Move::CastleKingside => self.castle_kingside(self.color_to_move),
+            Move::CastleQueenside => panic!("Not implemented"),
+        }?;
+
+        new.color_to_move = self.color_to_move.opposite();
+        Ok(new)
+    }
+
+    pub fn castle_kingside(&self, color: Color) -> Result<Board> {
+        let mut new = self.clone();
+
+        // TODO: ensure not attacked, still allowed
+
+        if color == Color::WHITE {
+            new.board[G1.index()] = new.board[E1.index()];
+            new.board[F1.index()] = new.board[H1.index()];
+            new.board[E1.index()] = EMPTY;
+            new.board[H1.index()] = EMPTY;
+
+            new.can_castle.kingside_white = false;
+            new.can_castle.queenside_white = false;
+        } else {
+            panic!("Not implemented")
+        }
+
+        Ok(new)
+    }
+
     pub fn move_piece(&self, from: Square, to: Square) -> Result<Board> {
         let mut new = self.clone();
 
@@ -183,9 +214,10 @@ impl Board {
 
         new.board[j] = new.board[i];
         new.board[i] = EMPTY;
-        new.color_to_move = self.color_to_move.opposite();
 
         // TODO: verify that move is valid.
+        // TODO: update castling rights
+
         Ok(new)
     }
 
@@ -248,6 +280,26 @@ impl Board {
         Ok(false)
     }
 
+    //     fn attacked_by_color(&self, square: usize, color: Color) -> Result<bool> {
+    //     for (i, _) in self.board.iter().enumerate() {
+    //         if self.is_occupied_by_color(i, color)
+    //             && self
+    //                 .possible_moves(Square::from_index(i), true)?
+    //                 .iter()
+    //                 .find_map(|mv| match mv {
+    //                     Move::Single { from: _, to } if to == &Square::from_index(square) => {
+    //                         Some(to)
+    //                     }
+    //                     _ => None,
+    //                 })
+    //                 .is_some()
+    //         {
+    //             return Ok(true);
+    //         }
+    //     }
+    //     Ok(false)
+    // }
+
     fn possible_moves(&self, from: Square, ignore_king_jeopardy: bool) -> Result<Vec<Square>> {
         // TODO: check color, turn
 
@@ -261,6 +313,35 @@ impl Board {
             Some(p) if p.piece() == KING => self._king_moves(from, &p, ignore_king_jeopardy),
             _ => Err(NotImplemented),
         }
+    }
+
+    // Return all moves possible for the given color, including castling and promotion
+    fn all_moves(&self, color: Color) -> Result<Vec<Move>> {
+        let mut moves: Vec<Move> = self
+            .all_pieces_of_color(color) // TODO: self.color_to_move?
+            .iter()
+            .flat_map(move |(_, square)| {
+                self.possible_moves(*square, false)
+                    .unwrap() // TODO fix this
+                    .into_iter()
+                    .map(move |to_square| Move::Single {
+                        from: square.clone(),
+                        to: to_square.clone(),
+                    })
+            })
+            .collect();
+
+        if color == Color::WHITE {
+            if self.can_castle.kingside_white
+                && self.is_empty(F1.index())
+                && self.is_empty(G1.index())
+            // TODO: cannot be attacked
+            {
+                moves.push(Move::CastleKingside)
+            }
+        }
+
+        Ok(moves)
     }
 
     //
@@ -531,29 +612,17 @@ impl Board {
             };
         }
 
-        let pieces = self.all_pieces_of_color(self.color_to_move);
-
-        let all_moves: Vec<(Piece, Square, Square)> = pieces
-            .iter()
-            .flat_map(move |(piece, square)| {
-                self.possible_moves(*square, false)
-                    .unwrap() // TODO fix this
-                    .into_iter()
-                    .map(move |to_square| (piece.clone(), square.clone(), to_square.clone()))
-            })
-            .collect();
+        let all_moves = self.all_moves(self.color_to_move)?;
 
         info!(
-            "{}: {}: All moves for position: {:?}",
+            "{}: {}: All moves for position: {}",
             self.color_to_move,
             path,
             all_moves
                 .iter()
-                .map(|(_, from, to)| Move {
-                    from: *from,
-                    to: *to
-                })
-                .collect::<Vec<Move>>()
+                .map(|mv| mv.to_string())
+                .collect::<Vec<String>>()
+                .join(", ")
         );
 
         let mut best_move: Option<Move> = None;
@@ -563,13 +632,8 @@ impl Board {
         };
         let mut best_path: Vec<Move> = path.into();
 
-        for (piece, square, to_square) in all_moves.iter() {
-            let mv = Move {
-                from: *square,
-                to: *to_square,
-            };
-
-            let moved_board = self.move_piece(*square, *to_square)?;
+        for mv in all_moves.iter() {
+            let moved_board = self.make_move(*mv)?;
             let moved_path = path.append(&mv);
 
             info!(
@@ -603,7 +667,7 @@ impl Board {
                     alpha = cmp::max(alpha, score);
                     if score > best_score {
                         best_score = score;
-                        best_move = Some(mv);
+                        best_move = Some(*mv);
                         best_path = mainline.clone();
                     }
                 }
@@ -611,17 +675,17 @@ impl Board {
                     beta = cmp::min(beta, score);
                     if score < best_score {
                         best_score = score;
-                        best_move = Some(mv);
+                        best_move = Some(*mv);
                         best_path = mainline.clone();
                     }
                 }
             }
 
             info!(
-                "{}: Evaluated move {} {} {} score={} α={} β={}",
+                "{}: Evaluated move {} {} score={} α={} β={}",
                 self.color_to_move,
                 path,
-                square_symbol(piece),
+                //                square_symbol(piece),
                 mv,
                 score,
                 alpha,
@@ -630,7 +694,7 @@ impl Board {
 
             if alpha >= beta {
                 info!("Found α={} >= β={}. Pruning rest of node.", alpha, beta);
-                return Ok((Some(mv), score, mainline));
+                return Ok((Some(*mv), score, mainline));
             }
             //            }
         }
@@ -674,16 +738,12 @@ impl Board {
 
         info!("{}: In check. Evaluating for checkmate", color);
 
-        let pieces = self.all_pieces_of_color(color);
+        for mv in self.all_moves(color)?.iter() {
+            let moved_board = self.make_move(*mv)?;
 
-        for (_, square) in pieces.iter() {
-            for to_square in self.possible_moves(*square, false)? {
-                let moved_board = self.move_piece(square.clone(), to_square)?;
-
-                // At least one way out!
-                if !moved_board.is_in_check(color)? {
-                    return Ok(false);
-                }
+            // At least one way out!
+            if !moved_board.is_in_check(color)? {
+                return Ok(false);
             }
         }
 
@@ -786,20 +846,31 @@ impl fmt::Display for TraversalPath<'_> {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Move {
-    pub from: Square,
-    pub to: Square,
+pub enum Move {
+    CastleKingside,
+    CastleQueenside,
+    Single { from: Square, to: Square },
 }
 
 impl Move {
     pub fn new(from: Square, to: Square) -> Self {
-        Move { from: from, to: to }
+        Move::Single { from: from, to: to }
+    }
+}
+
+impl From<(Square, Square)> for Move {
+    fn from((from, to): (Square, Square)) -> Self {
+        Move::Single { from, to }
     }
 }
 
 impl fmt::Display for Move {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}{}", self.from, self.to)
+        match self {
+            Move::Single { from, to } => write!(f, "{}{}", from, to),
+            Move::CastleKingside => write!(f, "0-0"),
+            Move::CastleQueenside => write!(f, "0-0-0"),
+        }
     }
 }
 
@@ -948,6 +1019,31 @@ fn test_king_can_take_queen_to_escape_check() {
         .iter()
         .find(|&&s| s == A7)
         .is_some());
+}
+
+#[test]
+fn test_castle_kingside_white() {
+    init();
+
+    let board =
+        crate::fen::parse("r1bqkbnr/ppp2ppp/2np4/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 0 3")
+            .unwrap();
+
+    assert!(board
+        .all_moves(Color::WHITE)
+        .unwrap()
+        .iter()
+        .map(|mv| *mv)
+        .collect::<Vec<Move>>()
+        .contains(&Move::CastleKingside));
+
+    let castled_board = board.make_move(Move::CastleKingside).unwrap();
+
+    assert_eq!(
+        castled_board,
+        crate::fen::parse("r1bqkbnr/ppp2ppp/2np4/4p3/2B1P3/5N2/PPPP1PPP/RNBQ1RK1 b kq - 0 3") // TODO: fix halfmove clock
+            .unwrap()
+    )
 }
 
 #[test]
@@ -1131,7 +1227,7 @@ fn test_checkmate_opponent_king_and_rook_2_moves() {
     let (mv, _) = board1.find_next_move(3).unwrap().unwrap();
     assert_eq!(mv, Move::new(B7, H7));
 
-    let board2 = board1.move_piece(mv.from, mv.to).unwrap();
+    let board2 = board1.make_move(mv).unwrap();
 
     // Only move available
     let board3 = board2.move_piece(H8, G8).unwrap();
@@ -1139,7 +1235,7 @@ fn test_checkmate_opponent_king_and_rook_2_moves() {
     let (mv3, _) = board3.find_next_move(3).unwrap().unwrap();
     assert_eq!(mv3, Move::new(A7, G7));
 
-    let board4 = board3.move_piece(mv3.from, mv3.to).unwrap();
+    let board4 = board3.make_move(mv3).unwrap();
     assert!(board4.checkmate(BLACK).unwrap());
 
     println!("{}", board1);
@@ -1162,7 +1258,7 @@ fn test_checkmate_opponent_king_and_rook_2_moves_black_to_move() {
     let (mv, _) = board1.find_next_move(3).unwrap().unwrap();
     assert_eq!(mv, Move::new(B7, H7));
 
-    let board2 = board1.move_piece(mv.from, mv.to).unwrap();
+    let board2 = board1.make_move(mv).unwrap();
 
     // Only move available
     let board3 = board2.move_piece(H8, G8).unwrap();
@@ -1170,7 +1266,7 @@ fn test_checkmate_opponent_king_and_rook_2_moves_black_to_move() {
     let (mv3, _) = board3.find_next_move(3).unwrap().unwrap();
     assert_eq!(mv3, Move::new(A7, G7));
 
-    let board4 = board3.move_piece(mv3.from, mv3.to).unwrap();
+    let board4 = board3.make_move(mv3).unwrap();
     assert!(board4.checkmate(WHITE).unwrap());
 
     println!("{}", board1);
@@ -1234,7 +1330,7 @@ impl Puzzle {
         let (found, _) = self.board.find_next_move(4).unwrap().unwrap();
         assert_eq!(found, Move::new(expect_from, expect_to));
 
-        Self::new(self.board.move_piece(found.from, found.to).unwrap())
+        Self::new(self.board.make_move(found).unwrap())
     }
 
     fn respond_with(&self, from: Square, to: Square) -> Self {
@@ -1277,10 +1373,6 @@ fn test_puzzle_grab_debug() {
         crate::fen::parse("1kr4r/1p2qp2/p2p1p1p/4p3/4P3/1b2Q3/nPPRBPPP/1K5R w - - 0 19").unwrap();
 
     Puzzle::new(board.move_piece(E3, A7).unwrap()).should_find_move(B8, A7);
-    // Puzzle::new(board)
-    //     .should_find_move(E3, B3)
-    //     .respond_with(A2, C3)
-    //     .should_find_move(B2, C3);
 }
 
 // TODO fix this test

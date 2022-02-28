@@ -47,10 +47,7 @@ pub fn run_uci() -> Result<()> {
                     let mv = board.find_next_move(depth)?;
 
                     if let Some((mv, _)) = mv {
-                        respond(UCIResponse::BestMove {
-                            from: mv.from,
-                            to: mv.to,
-                        })
+                        respond(UCIResponse::BestMove { mv: mv })
                     } else {
                         Err(BoardError::ProtocolError(
                             "No move found. In checkmate?".to_string(),
@@ -132,7 +129,7 @@ enum UCIResponse {
     Id,
     Ok,
     ReadyOk,
-    BestMove { from: Square, to: Square },
+    BestMove { mv: Move },
     Option(String), // TODO actually implement
 }
 
@@ -143,12 +140,7 @@ impl fmt::Display for UCIResponse {
             UCIResponse::Id => write!(f, "id name chess-engine id author Bo"),
             UCIResponse::Ok => write!(f, "uciok"),
             UCIResponse::ReadyOk => write!(f, "readyok"),
-            UCIResponse::BestMove { from, to } => write!(
-                f,
-                "bestmove {}{}",
-                from.to_string().to_lowercase(),
-                to.to_string().to_lowercase()
-            ),
+            UCIResponse::BestMove { mv } => write!(f, "bestmove {}", mv),
             UCIResponse::Option(s) => write!(f, "option {}", s),
         }?;
 

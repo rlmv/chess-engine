@@ -1,3 +1,4 @@
+use chess_engine::board::Move;
 use chess_engine::fen;
 use chess_engine::uci;
 
@@ -88,8 +89,8 @@ fn evaluate_fen(fen: &String, depth: u8) -> () {
     match mv {
         None => println!("No move found. In checkmate?"),
         Some((mv, _)) => {
-            println!("Done. Best move is {}{}\n", mv.from, mv.to);
-            let moved_board = board.move_piece(mv.from, mv.to).unwrap();
+            println!("Done. Best move is {}\n", mv);
+            let moved_board = board.make_move(mv).unwrap();
             println!("{}\n", moved_board);
         }
     }
