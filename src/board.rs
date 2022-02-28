@@ -173,7 +173,7 @@ impl Board {
 
     pub fn make_move(&self, mv: Move) -> Result<Board> {
         let mut new = match mv {
-            Move::Single { from, to } => self.move_piece(from, to),
+            Move::Single { from, to } => self._move_piece(from, to),
             Move::CastleKingside => self.castle_kingside(self.color_to_move),
             Move::CastleQueenside => panic!("Not implemented"),
         }?;
@@ -202,7 +202,7 @@ impl Board {
         Ok(new)
     }
 
-    pub fn move_piece(&self, from: Square, to: Square) -> Result<Board> {
+    fn _move_piece(&self, from: Square, to: Square) -> Result<Board> {
         let mut new = self.clone();
 
         let i = from.index();
@@ -272,7 +272,14 @@ impl Board {
             if self.is_occupied_by_color(i, color)
                 && self
                     .possible_moves(Square::from_index(i), true)?
-                    .contains(&Square::from_index(square))
+                    .iter()
+                    .find_map(|mv| match mv {
+                        Move::Single { from: _, to } if to == &Square::from_index(square) => {
+                            Some(to)
+                        }
+                        _ => None,
+                    })
+                    .is_some()
             {
                 return Ok(true);
             }
@@ -280,37 +287,19 @@ impl Board {
         Ok(false)
     }
 
-    //     fn attacked_by_color(&self, square: usize, color: Color) -> Result<bool> {
-    //     for (i, _) in self.board.iter().enumerate() {
-    //         if self.is_occupied_by_color(i, color)
-    //             && self
-    //                 .possible_moves(Square::from_index(i), true)?
-    //                 .iter()
-    //                 .find_map(|mv| match mv {
-    //                     Move::Single { from: _, to } if to == &Square::from_index(square) => {
-    //                         Some(to)
-    //                     }
-    //                     _ => None,
-    //                 })
-    //                 .is_some()
-    //         {
-    //             return Ok(true);
-    //         }
-    //     }
-    //     Ok(false)
-    // }
-
-    fn possible_moves(&self, from: Square, ignore_king_jeopardy: bool) -> Result<Vec<Square>> {
+    fn possible_moves(&self, from: Square, ignore_king_jeopardy: bool) -> Result<Vec<Move>> {
         // TODO: check color, turn
 
         match Piece::from(self.board[from.index()]) {
             None => Err(NoPieceOnFromSquare(from)),
-            Some(p) if p.piece() == PAWN => Ok(self._pawn_moves(from, &p)),
-            Some(p) if p.piece() == KNIGHT => Ok(self._knight_moves(from, &p)),
-            Some(p) if p.piece() == BISHOP => Ok(self._bishop_moves(from, &p)),
-            Some(p) if p.piece() == ROOK => Ok(self._rook_moves(from, &p)),
-            Some(p) if p.piece() == QUEEN => Ok(self._queen_moves(from, &p)),
-            Some(p) if p.piece() == KING => self._king_moves(from, &p, ignore_king_jeopardy),
+            Some(p) if p.piece() == PAWN => Ok(cross_product(from, self._pawn_moves(from, &p))),
+            Some(p) if p.piece() == KNIGHT => Ok(cross_product(from, self._knight_moves(from, &p))),
+            Some(p) if p.piece() == BISHOP => Ok(cross_product(from, self._bishop_moves(from, &p))),
+            Some(p) if p.piece() == ROOK => Ok(cross_product(from, self._rook_moves(from, &p))),
+            Some(p) if p.piece() == QUEEN => Ok(cross_product(from, self._queen_moves(from, &p))),
+            Some(p) if p.piece() == KING => self
+                ._king_moves(from, &p, ignore_king_jeopardy)
+                .map(|moves| cross_product(from, moves)),
             _ => Err(NotImplemented),
         }
     }
@@ -324,10 +313,6 @@ impl Board {
                 self.possible_moves(*square, false)
                     .unwrap() // TODO fix this
                     .into_iter()
-                    .map(move |to_square| Move::Single {
-                        from: square.clone(),
-                        to: to_square.clone(),
-                    })
             })
             .collect();
 
@@ -864,6 +849,37 @@ impl From<(Square, Square)> for Move {
     }
 }
 
+impl PartialOrd for Move {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Move {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match (*self, *other) {
+            (Move::CastleKingside, Move::CastleKingside) => Ordering::Equal,
+            (Move::CastleKingside, _) => Ordering::Greater,
+            (Move::CastleQueenside, Move::CastleKingside) => Ordering::Less,
+            (Move::CastleQueenside, Move::CastleQueenside) => Ordering::Equal,
+            (Move::CastleQueenside, _) => Ordering::Greater,
+            (
+                Move::Single {
+                    from: from1,
+                    to: to1,
+                },
+                Move::Single {
+                    from: from2,
+                    to: to2,
+                },
+            ) => (from1, to1).cmp(&(from2, to2)),
+
+            (_, Move::CastleKingside) => Ordering::Less,
+            (_, Move::CastleQueenside) => Ordering::Less,
+        }
+    }
+}
+
 impl fmt::Display for Move {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -919,9 +935,18 @@ fn init() {
 }
 
 #[cfg(test)]
-fn sorted(mut v: Vec<Square>) -> Vec<Square> {
+fn sorted(mut v: Vec<Move>) -> Vec<Move> {
     v.sort();
     v
+}
+
+fn cross_product(from: Square, to: Vec<Square>) -> Vec<Move> {
+    to.iter()
+        .map(|square| Move::Single {
+            from: from,
+            to: *square,
+        })
+        .collect()
 }
 
 #[test]
@@ -933,12 +958,12 @@ fn test_king_free_movement() {
 
     assert_eq!(
         sorted(board.possible_moves(A1, false).unwrap()),
-        sorted(vec![A2, B2, B1])
+        sorted(cross_product(A1, vec![A2, B2, B1]))
     );
 
     assert_eq!(
         sorted(board.possible_moves(C6, false).unwrap()),
-        sorted(vec![C7, D7, D6, D5, C5, B5, B6, B7])
+        sorted(cross_product(C6, vec![C7, D7, D6, D5, C5, B5, B6, B7]))
     );
 
     assert_eq!(
@@ -948,7 +973,7 @@ fn test_king_free_movement() {
                 .possible_moves(H8, false)
                 .unwrap()
         ),
-        sorted(vec![H7, G7, G8])
+        sorted(cross_product(H8, vec![H7, G7, G8]))
     );
 }
 
@@ -964,7 +989,7 @@ fn test_king_obstructed_movement() {
 
     assert_eq!(
         sorted(board.possible_moves(F2, false).unwrap()),
-        sorted(vec![G2, G1, E1, E3])
+        sorted(cross_product(F2, vec![G2, G1, E1, E3]))
     );
 }
 
@@ -977,7 +1002,7 @@ fn test_king_cannot_move_into_check() {
 
     assert_eq!(
         sorted(board.possible_moves(A1, false).unwrap()),
-        sorted(vec![B1])
+        sorted(vec![(A1, B1).into()])
     );
 }
 
@@ -1017,7 +1042,7 @@ fn test_king_can_take_queen_to_escape_check() {
         .possible_moves(B8, false)
         .unwrap()
         .iter()
-        .find(|&&s| s == A7)
+        .find(|&&s| s == (B8, A7).into())
         .is_some());
 }
 
@@ -1054,18 +1079,24 @@ fn test_rook_free_movement() {
 
     assert_eq!(
         sorted(board.possible_moves(A1, false).unwrap()),
-        sorted(vec![
-            A2, A3, A4, A5, A6, A7, A8, // rank moves (up-down)
-            B1, C1, D1, E1, F1, G1, H1 // file moves (side-to-side)
-        ])
+        sorted(cross_product(
+            A1,
+            vec![
+                A2, A3, A4, A5, A6, A7, A8, // rank moves (up-down)
+                B1, C1, D1, E1, F1, G1, H1 // file moves (side-to-side)
+            ]
+        ))
     );
 
     assert_eq!(
         sorted(board.possible_moves(C6, false).unwrap()),
-        sorted(vec![
-            C1, C2, C3, C4, C5, C7, C8, // rank moves (up-down)
-            A6, B6, D6, E6, F6, G6, H6 // file moves (side-to-side)
-        ])
+        sorted(cross_product(
+            C6,
+            vec![
+                C1, C2, C3, C4, C5, C7, C8, // rank moves (up-down)
+                A6, B6, D6, E6, F6, G6, H6 // file moves (side-to-side)
+            ]
+        ))
     );
 }
 
@@ -1076,7 +1107,10 @@ fn test_rook_boundary_conditions() {
 
     assert_eq!(
         sorted(board.possible_moves(A8, false).unwrap()),
-        sorted(vec![A1, A2, A3, A4, A5, A6, A7, B8, C8, D8, E8, F8, G8, H8])
+        sorted(cross_product(
+            A8,
+            vec![A1, A2, A3, A4, A5, A6, A7, B8, C8, D8, E8, F8, G8, H8]
+        ))
     )
 }
 
@@ -1092,10 +1126,13 @@ fn test_rook_obstructed_movement() {
 
     assert_eq!(
         sorted(board.possible_moves(E5, false).unwrap()),
-        sorted(vec![
-            E3, E4, // rank moves (up-down)
-            B5, C5, D5, F5 // file moves (side-to-side)
-        ])
+        sorted(cross_product(
+            E5,
+            vec![
+                E3, E4, // rank moves (up-down)
+                B5, C5, D5, F5 // file moves (side-to-side)
+            ]
+        ))
     );
 }
 
@@ -1111,10 +1148,13 @@ fn test_rook_capture() {
 
     assert_eq!(
         sorted(board.possible_moves(E5, false).unwrap()),
-        sorted(vec![
-            E2, E3, E4, E6, // rank moves (up-down)
-            A5, B5, C5, D5, F5, G5 // file moves (side-to-side)
-        ])
+        sorted(cross_product(
+            E5,
+            vec![
+                E2, E3, E4, E6, // rank moves (up-down)
+                A5, B5, C5, D5, F5, G5 // file moves (side-to-side)
+            ]
+        ))
     );
 }
 
@@ -1230,7 +1270,7 @@ fn test_checkmate_opponent_king_and_rook_2_moves() {
     let board2 = board1.make_move(mv).unwrap();
 
     // Only move available
-    let board3 = board2.move_piece(H8, G8).unwrap();
+    let board3 = board2.make_move((H8, G8).into()).unwrap();
 
     let (mv3, _) = board3.find_next_move(3).unwrap().unwrap();
     assert_eq!(mv3, Move::new(A7, G7));
@@ -1261,7 +1301,7 @@ fn test_checkmate_opponent_king_and_rook_2_moves_black_to_move() {
     let board2 = board1.make_move(mv).unwrap();
 
     // Only move available
-    let board3 = board2.move_piece(H8, G8).unwrap();
+    let board3 = board2.make_move((H8, G8).into()).unwrap();
 
     let (mv3, _) = board3.find_next_move(3).unwrap().unwrap();
     assert_eq!(mv3, Move::new(A7, G7));
@@ -1334,7 +1374,7 @@ impl Puzzle {
     }
 
     fn respond_with(&self, from: Square, to: Square) -> Self {
-        Self::new(self.board.move_piece(from, to).unwrap())
+        Self::new(self.board.make_move((from, to).into()).unwrap())
     }
 
     fn should_be_checkmate(&self) {
@@ -1372,7 +1412,7 @@ fn test_puzzle_grab_debug() {
     let board =
         crate::fen::parse("1kr4r/1p2qp2/p2p1p1p/4p3/4P3/1b2Q3/nPPRBPPP/1K5R w - - 0 19").unwrap();
 
-    Puzzle::new(board.move_piece(E3, A7).unwrap()).should_find_move(B8, A7);
+    Puzzle::new(board.make_move((E3, A7).into()).unwrap()).should_find_move(B8, A7);
 }
 
 // TODO fix this test
@@ -1414,7 +1454,7 @@ fn test_pawn_movement_from_start_rank_white() {
 
     assert_eq!(
         sorted(board.possible_moves(A2, false).unwrap()),
-        sorted(vec![A3, A4,])
+        sorted(cross_product(A2, vec![A3, A4,]))
     );
 }
 
@@ -1425,7 +1465,7 @@ fn test_pawn_movement_from_start_rank_black() {
 
     assert_eq!(
         sorted(board.possible_moves(C7, false).unwrap()),
-        sorted(vec![C6, C5,])
+        sorted(cross_product(C7, vec![C6, C5,]))
     );
 }
 
@@ -1438,7 +1478,7 @@ fn test_pawn_movement_blocked_from_start_rank_white() {
 
     assert_eq!(
         sorted(board1.possible_moves(A2, false).unwrap()),
-        sorted(vec![A3])
+        sorted(vec![(A2, A3).into()])
     );
 
     let board2 = Board::empty()
@@ -1461,7 +1501,7 @@ fn test_pawn_movement_blocked_from_start_rank_black() {
 
     assert_eq!(
         sorted(board1.possible_moves(A7, false).unwrap()),
-        sorted(vec![A6])
+        sorted(vec![(A7, A6).into()])
     );
 
     let board2 = Board::empty()
@@ -1482,7 +1522,7 @@ fn test_pawn_movement_from_middle_board_white() {
 
     assert_eq!(
         sorted(board.possible_moves(H3, false).unwrap()),
-        sorted(vec![H4])
+        sorted(vec![(H3, H4).into()])
     );
 }
 
@@ -1495,7 +1535,7 @@ fn test_pawn_movement_from_middle_board_black() {
 
     assert_eq!(
         sorted(board.possible_moves(D4, false).unwrap()),
-        sorted(vec![D3])
+        sorted(vec![(D4, D3).into()])
     );
 }
 
@@ -1509,7 +1549,7 @@ fn test_pawn_capture_white() {
 
     assert_eq!(
         sorted(board.possible_moves(F6, false).unwrap()),
-        sorted(vec![E7, F7, G7])
+        sorted(cross_product(F6, vec![E7, F7, G7]))
     );
 }
 
@@ -1524,7 +1564,7 @@ fn test_pawn_capture_black() {
 
     assert_eq!(
         sorted(board.possible_moves(C4, false).unwrap()),
-        sorted(vec![B3, C3, D3])
+        sorted(cross_product(C4, vec![B3, C3, D3]))
     );
 }
 
@@ -1538,7 +1578,7 @@ fn test_pawn_cannot_capture_own_pieces_white() {
 
     assert_eq!(
         sorted(board.possible_moves(F6, false).unwrap()),
-        sorted(vec![F7])
+        sorted(vec![(F6, F7).into()])
     );
 }
 
@@ -1553,7 +1593,7 @@ fn test_pawn_cannot_capture_own_pieces_black() {
 
     assert_eq!(
         sorted(board.possible_moves(C4, false).unwrap()),
-        sorted(vec![C3])
+        sorted(vec![(C4, C3).into()])
     );
 }
 
@@ -1569,12 +1609,12 @@ fn test_pawn_cannot_capture_around_edge_of_board() {
 
     assert_eq!(
         sorted(board.possible_moves(A6, false).unwrap()),
-        sorted(vec![A7])
+        sorted(vec![(A6, A7).into()])
     );
 
     assert_eq!(
         sorted(board.possible_moves(H3, false).unwrap()),
-        sorted(vec![H4])
+        sorted(vec![(H3, H4).into()])
     );
 }
 
@@ -1602,7 +1642,7 @@ fn test_knight_moves() {
 
     assert_eq!(
         sorted(board.possible_moves(D4, false).unwrap()),
-        sorted(vec![E6, F5, F3, E2, C2, B3, B5, C6,])
+        sorted(cross_product(D4, vec![E6, F5, F3, E2, C2, B3, B5, C6,]))
     );
 }
 
@@ -1615,10 +1655,13 @@ fn test_bishop_moves() {
 
     assert_eq!(
         sorted(board.possible_moves(C5, false).unwrap()),
-        sorted(vec![
-            A3, B4, D6, E7, F8, // right diagonal
-            A7, B6, D4, E3, F2, G1, // left diagonal
-        ])
+        sorted(cross_product(
+            C5,
+            vec![
+                A3, B4, D6, E7, F8, // right diagonal
+                A7, B6, D4, E3, F2, G1, // left diagonal
+            ]
+        ))
     );
 }
 
@@ -1631,16 +1674,18 @@ fn test_queen_moves() {
 
     assert_eq!(
         sorted(board.possible_moves(C5, false).unwrap()),
-        sorted(vec![
-            A3, B4, D6, E7, F8, // right diagonal
-            A7, B6, D4, E3, F2, G1, // left diagonal
-            A5, B5, D5, E5, F5, G5, H5, // horizontal
-            C1, C2, C3, C4, C6, C7, C8, // vertical
-        ])
+        sorted(cross_product(
+            C5,
+            vec![
+                A3, B4, D6, E7, F8, // right diagonal
+                A7, B6, D4, E3, F2, G1, // left diagonal
+                A5, B5, D5, E5, F5, G5, H5, // horizontal
+                C1, C2, C3, C4, C6, C7, C8, // vertical
+            ]
+        ))
     );
 }
 
-#[test]
 fn test_vector_transpose() {
     let cases = vec![
         (A1, MoveVector(1, 1), Some(B2)),
