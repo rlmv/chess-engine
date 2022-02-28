@@ -57,7 +57,7 @@ enum Command {
 }
 
 fn configure_logging() -> () {
-    let stderr = ConsoleAppender::builder().target(Target::Stderr).build();
+    //    let stderr = ConsoleAppender::builder().target(Target::Stderr).build();
 
     let file = FileAppender::builder()
         .build("/home/bo/.scidvspc/log/internal.log")

@@ -1,6 +1,7 @@
 use crate::board::*;
 use crate::error::BoardError;
 use crate::fen::fen_parser;
+use crate::square::*;
 use log::info;
 use std::fmt;
 use std::io::{self, Write};
@@ -12,13 +13,15 @@ use nom::{
 
 /*
  * Main event loop for UCI interface.
+ *
+ * UCI protocol: http://page.mi.fu-berlin.de/block/uci.htm
  */
 pub fn run_uci() -> Result<()> {
     info!("UCI: starting new session");
 
     let mut board: Option<Board> = None;
 
-    while true {
+    loop {
         let mut buffer = String::new();
         read_line(&mut buffer)?;
         let command = parse_uci_input(&buffer)?;
@@ -27,6 +30,9 @@ pub fn run_uci() -> Result<()> {
             UCICommand::UCI => {
                 respond(UCIResponse::Id)?;
                 // TODO: options
+                respond(UCIResponse::Option(
+                    "name Hash type spin default 1 min 1 max 128".to_string(),
+                ))?;
                 respond(UCIResponse::Ok)
             }
             UCICommand::SetOption => Ok(()), // TODO
@@ -34,6 +40,25 @@ pub fn run_uci() -> Result<()> {
             UCICommand::Position(new_board) => {
                 board = Some(new_board); // set state
                 Ok(())
+            }
+            UCICommand::Go => {
+                if let Some(board) = board {
+                    let depth = 4; //  TODO configure depth
+                    let mv = board.find_next_move(depth)?;
+
+                    if let Some((mv, _)) = mv {
+                        respond(UCIResponse::BestMove {
+                            from: mv.from,
+                            to: mv.to,
+                        })
+                    } else {
+                        Err(BoardError::ProtocolError(
+                            "No move found. In checkmate?".to_string(),
+                        ))
+                    }
+                } else {
+                    Err(BoardError::ProtocolError("No board setup".to_string()))
+                }
             }
             UCICommand::Quit => break,
             UCICommand::Stop => Ok(()), // TODO
@@ -66,6 +91,8 @@ fn parse_uci_input(input: &str) -> Result<UCICommand> {
 
     let stop = map(tag("stop"), |_: &str| UCICommand::Stop);
 
+    let go = map(tag("go"), |_: &str| UCICommand::Go);
+
     fn position(i: &str) -> IResult<&str, UCICommand> {
         let (i, _) = tag("position")(i)?;
         let (i, _) = space1(i)?;
@@ -78,7 +105,7 @@ fn parse_uci_input(input: &str) -> Result<UCICommand> {
         Ok((i, UCICommand::Position(board)))
     }
 
-    alt((uci, set_option, quit, stop, is_ready, position))(input)
+    alt((uci, set_option, quit, stop, is_ready, position, go))(input)
         .finish()
         .map(|(_, command)| {
             info!("UCI: got command {:?}", command);
@@ -97,6 +124,7 @@ enum UCICommand {
     Quit,
     IsReady,
     Stop,
+    Go, // TODO: parse options
 }
 
 #[derive(Debug)]
@@ -104,6 +132,8 @@ enum UCIResponse {
     Id,
     Ok,
     ReadyOk,
+    BestMove { from: Square, to: Square },
+    Option(String), // TODO actually implement
 }
 
 // serialize Engine -> GUI response
@@ -113,7 +143,16 @@ impl fmt::Display for UCIResponse {
             UCIResponse::Id => write!(f, "id name chess-engine id author Bo"),
             UCIResponse::Ok => write!(f, "uciok"),
             UCIResponse::ReadyOk => write!(f, "readyok"),
-        }
+            UCIResponse::BestMove { from, to } => write!(
+                f,
+                "bestmove {}{}",
+                from.to_string().to_lowercase(),
+                to.to_string().to_lowercase()
+            ),
+            UCIResponse::Option(s) => write!(f, "option {}", s),
+        }?;
+
+        write!(f, "\n")
     }
 }
 
