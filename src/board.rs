@@ -1,5 +1,5 @@
 use core::cmp::Ordering;
-use log::info;
+use log::{debug, info};
 use std::cmp;
 use std::fmt;
 
@@ -589,7 +589,7 @@ impl Board {
         if depth == 0 {
             return Ok((None, self.evaluate_position()?, path.into()));
         } else if self.checkmate(self.color_to_move)? {
-            info!("Position is checkmate for {}", self.color_to_move);
+            debug!("Position is checkmate for {}", self.color_to_move);
 
             return match self.color_to_move {
                 WHITE => Ok((None, Score::MIN.plus(1), path.into())),
@@ -599,7 +599,7 @@ impl Board {
 
         let all_moves = self.all_moves(self.color_to_move)?;
 
-        info!(
+        debug!(
             "{}: {}: All moves for position: {}",
             self.color_to_move,
             path,
@@ -621,7 +621,7 @@ impl Board {
             let moved_board = self.make_move(*mv)?;
             let moved_path = path.append(&mv);
 
-            info!(
+            debug!(
                 "{}: Evaluating move {}. Initial α={} β={}",
                 self.color_to_move, moved_path, alpha, beta
             );
@@ -630,7 +630,7 @@ impl Board {
             // is not checkmate: if the recursive call below returns no
             // moves then the position is mate
             if moved_board.is_in_check(self.color_to_move)? {
-                info!(
+                debug!(
                     "{}: Continue. In check after move {}{}",
                     self.color_to_move, moved_path, mv
                 );
@@ -666,7 +666,7 @@ impl Board {
                 }
             }
 
-            info!(
+            debug!(
                 "{}: Evaluated move {} {} score={} α={} β={}",
                 self.color_to_move,
                 path,
@@ -678,7 +678,7 @@ impl Board {
             );
 
             if alpha >= beta {
-                info!("Found α={} >= β={}. Pruning rest of node.", alpha, beta);
+                debug!("Found α={} >= β={}. Pruning rest of node.", alpha, beta);
                 return Ok((Some(*mv), score, mainline));
             }
             //            }
@@ -694,7 +694,7 @@ impl Board {
      */
     fn evaluate_position(&self) -> Result<Score> {
         if self.checkmate(BLACK)? {
-            info!("Found checkmate of {}", BLACK);
+            debug!("Found checkmate of {}", BLACK);
             return Ok(Score::MAX.minus(1));
         } else if self.checkmate(WHITE)? {
             info!("Found checkmate of {}", WHITE);
@@ -721,7 +721,7 @@ impl Board {
             return Ok(false);
         }
 
-        info!("{}: In check. Evaluating for checkmate", color);
+        debug!("{}: In check. Evaluating for checkmate", color);
 
         for mv in self.all_moves(color)?.iter() {
             let moved_board = self.make_move(*mv)?;
@@ -732,7 +732,7 @@ impl Board {
             }
         }
 
-        info!("{}: Found checkmate", color);
+        debug!("{}: Found checkmate", color);
 
         Ok(true)
     }
