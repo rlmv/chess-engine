@@ -182,7 +182,7 @@ impl Board {
         Ok(new)
     }
 
-    pub fn castle_kingside(&self, color: Color) -> Result<Board> {
+    fn castle_kingside(&self, color: Color) -> Result<Board> {
         let mut new = self.clone();
 
         // TODO: ensure not attacked, still allowed
@@ -196,13 +196,19 @@ impl Board {
             new.can_castle.kingside_white = false;
             new.can_castle.queenside_white = false;
         } else {
-            panic!("Not implemented")
+            new.board[G8.index()] = new.board[E8.index()];
+            new.board[F8.index()] = new.board[H8.index()];
+            new.board[E8.index()] = EMPTY;
+            new.board[H8.index()] = EMPTY;
+
+            new.can_castle.kingside_black = false;
+            new.can_castle.queenside_black = false;
         }
 
         Ok(new)
     }
 
-    pub fn castle_queenside(&self, color: Color) -> Result<Board> {
+    fn castle_queenside(&self, color: Color) -> Result<Board> {
         let mut new = self.clone();
 
         // TODO: ensure not attacked, still allowed
@@ -216,7 +222,13 @@ impl Board {
             new.can_castle.kingside_white = false;
             new.can_castle.queenside_white = false;
         } else {
-            panic!("Not implemented")
+            new.board[C8.index()] = new.board[E8.index()];
+            new.board[D8.index()] = new.board[A8.index()];
+            new.board[A8.index()] = EMPTY;
+            new.board[E8.index()] = EMPTY;
+
+            new.can_castle.kingside_black = false;
+            new.can_castle.queenside_black = false;
         }
 
         Ok(new)
@@ -354,6 +366,22 @@ impl Board {
                 && self.is_empty(B1.index())
                 && self.is_empty(C1.index())
                 && self.is_empty(D1.index())
+            {
+                moves.push(Move::CastleQueenside)
+            }
+        } else {
+            if self.can_castle.kingside_black
+                && self.is_empty(F8.index())
+                && self.is_empty(G8.index())
+            {
+                moves.push(Move::CastleKingside)
+            }
+
+            // TODO: must not be attacked
+            if self.can_castle.queenside_black
+                && self.is_empty(B8.index())
+                && self.is_empty(C8.index())
+                && self.is_empty(D8.index())
             {
                 moves.push(Move::CastleQueenside)
             }
@@ -1161,6 +1189,56 @@ fn test_castle_queenside_white_not_allowed_if_king_has_moved() {
         .map(|mv| *mv)
         .collect::<Vec<Move>>()
         .contains(&Move::CastleQueenside));
+}
+
+#[test]
+fn test_castle_kingside_black() {
+    init();
+
+    let board =
+        crate::fen::parse("r1bqk2r/pppp1ppp/2n2n2/4p3/1bB1P3/2N2N2/PPPP1PPP/R1BQ1RK1 b kq - 7 5")
+            .unwrap();
+
+    assert!(board
+        .all_moves(Color::BLACK)
+        .unwrap()
+        .iter()
+        .map(|mv| *mv)
+        .collect::<Vec<Move>>()
+        .contains(&Move::CastleKingside));
+
+    let castled_board = board.make_move(Move::CastleKingside).unwrap();
+
+    assert_eq!(
+        castled_board,
+        crate::fen::parse("r1bq1rk1/pppp1ppp/2n2n2/4p3/1bB1P3/2N2N2/PPPP1PPP/R1BQ1RK1 w - - 7 5") // TODO fix clocks
+            .unwrap()
+    )
+}
+
+#[test]
+fn test_castle_queenside_black() {
+    init();
+
+    let board =
+        crate::fen::parse("r3kb1r/pppq1ppp/2np1n2/4pP2/3P4/2NBBN2/PPP2PPP/R2QK2R b KQkq - 2 7")
+            .unwrap();
+
+    assert!(board
+        .all_moves(Color::BLACK)
+        .unwrap()
+        .iter()
+        .map(|mv| *mv)
+        .collect::<Vec<Move>>()
+        .contains(&Move::CastleQueenside));
+
+    let castled_board = board.make_move(Move::CastleQueenside).unwrap();
+
+    assert_eq!(
+        castled_board,
+        crate::fen::parse("2kr1b1r/pppq1ppp/2np1n2/4pP2/3P4/2NBBN2/PPP2PPP/R2QK2R w KQ - 2 7") // TODO fix clocks
+            .unwrap()
+    )
 }
 
 #[test]

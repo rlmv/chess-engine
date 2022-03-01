@@ -14,8 +14,7 @@ use nom::{
     character::complete::space1,
     combinator::{map, opt},
     multi::many1,
-    sequence::delimited,
-    sequence::{pair, preceded, tuple},
+    sequence::{pair, preceded},
     Finish, IResult,
 };
 
