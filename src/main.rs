@@ -1,4 +1,3 @@
-use chess_engine::board::Move;
 use chess_engine::fen;
 use chess_engine::uci;
 
@@ -6,7 +5,7 @@ use std::env;
 
 use log::error;
 use log::LevelFilter;
-use log4rs::append::console::{ConsoleAppender, Target};
+// use log4rs::append::console::{ConsoleAppender, Target};
 use log4rs::append::file::FileAppender;
 use log4rs::config::{Appender, Config, Root};
 

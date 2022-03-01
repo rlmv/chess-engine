@@ -1,7 +1,6 @@
 use crate::board::*;
 use crate::error::BoardError;
 use crate::fen::fen_parser;
-use crate::square::*;
 use log::info;
 use std::fmt;
 use std::io::{self, Write};
@@ -59,10 +58,6 @@ pub fn run_uci() -> Result<()> {
             }
             UCICommand::Quit => break,
             UCICommand::Stop => Ok(()), // TODO
-            other => Err(BoardError::ProtocolError(format!(
-                "Got unexpected command {:?}",
-                other,
-            ))),
         }?;
     }
 

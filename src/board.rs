@@ -1774,6 +1774,7 @@ fn test_queen_moves() {
     );
 }
 
+#[test]
 fn test_vector_transpose() {
     let cases = vec![
         (A1, MoveVector(1, 1), Some(B2)),
