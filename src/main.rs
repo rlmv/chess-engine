@@ -46,8 +46,7 @@ fn main() {
                 panic!("Expected a FEN string");
             }
         }
-        Some(Command::UCI) => uci::run_uci().map_err(|e| error!("{}", e)).unwrap(),
-        None => panic!("No command provided"),
+        Some(Command::UCI) | None => uci::run_uci().map_err(|e| error!("{}", e)).unwrap(),
     };
 }
 

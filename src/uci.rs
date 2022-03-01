@@ -1,6 +1,6 @@
 use crate::board::*;
 use crate::error::BoardError;
-use crate::fen::fen_parser;
+use crate::fen;
 use log::info;
 use std::fmt;
 use std::io::{self, Write};
@@ -88,11 +88,22 @@ fn parse_uci_input(input: &str) -> Result<UCICommand> {
     fn position(i: &str) -> IResult<&str, UCICommand> {
         let (i, _) = tag("position")(i)?;
         let (i, _) = space1(i)?;
-        // TODO: handle startpos
-        let (i, _) = tag("fen")(i)?;
-        let (i, _) = space1(i)?;
 
-        let (i, board) = fen_parser(i)?;
+        fn fen(i: &str) -> IResult<&str, Board> {
+            let (i, _) = tag("fen")(i)?;
+            let (i, _) = space1(i)?;
+            fen::fen_parser(i)
+        }
+
+        fn startpos(i: &str) -> IResult<&str, Board> {
+            let (i, _) = tag("startpos")(i)?;
+            // TODO: better way to initialize starting board
+            let board =
+                fen::parse("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1").unwrap(); // TODO no unwrap
+            Ok((i, board))
+        }
+
+        let (i, board) = alt((fen, startpos))(i)?;
 
         Ok((i, UCICommand::Position(board)))
     }

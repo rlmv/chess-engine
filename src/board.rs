@@ -596,7 +596,7 @@ impl Board {
         let (mv, score, path) =
             self._find_next_move(depth, &TraversalPath::head(), Score::MIN, Score::MAX)?;
 
-        println!("Main line score={}, path={:?}", score, path);
+        debug!("Main line score={}, path={:?}", score, path);
         Ok(mv.map(|m| (m, score)))
     }
 
