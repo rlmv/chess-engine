@@ -154,7 +154,7 @@ pub fn fen_parser(fen: &str) -> IResult<&str, Board> {
     ))
 }
 
-fn square_parser(input: &str) -> IResult<&str, Square> {
+pub fn square_parser(input: &str) -> IResult<&str, Square> {
     map(
         pair(one_of("abcdefghABCDEFGH"), one_of("12345678")),
         |(f, r)| {

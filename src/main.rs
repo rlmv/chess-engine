@@ -8,6 +8,7 @@ use log::LevelFilter;
 // use log4rs::append::console::{ConsoleAppender, Target};
 use log4rs::append::file::FileAppender;
 use log4rs::config::{Appender, Config, Root};
+use log_panics;
 
 const DEFAULT_DEPTH: u8 = 3;
 
@@ -58,6 +59,8 @@ enum Command {
 fn configure_logging() -> () {
     //    let stderr = ConsoleAppender::builder().target(Target::Stderr).build();
 
+    log_panics::init();
+
     let file = FileAppender::builder()
         .build("/home/bo/.scidvspc/log/internal.log")
         .unwrap();
@@ -69,7 +72,7 @@ fn configure_logging() -> () {
             Root::builder()
                 //                .appender("stderr")
                 .appender("file")
-                .build(LevelFilter::Debug),
+                .build(LevelFilter::Info),
         )
         .unwrap();
 

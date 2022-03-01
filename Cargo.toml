@@ -11,3 +11,4 @@ log = "0.4"
 env_logger = "0.9"
 log4rs = "1.0"
 nom = "7.1"
+log-panics = { version = "2.0", features = ["with-backtrace"] }

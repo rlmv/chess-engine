@@ -1,13 +1,22 @@
 use crate::board::*;
+use crate::color::Color;
 use crate::error::BoardError;
 use crate::fen;
+use crate::square::*;
 use log::info;
 use std::fmt;
 use std::io::{self, Write};
 
 use nom::{
-    self, branch::alt, bytes::complete::tag, character::complete::space1, combinator::map, Finish,
-    IResult,
+    self,
+    branch::alt,
+    bytes::complete::tag,
+    character::complete::space1,
+    combinator::{map, opt},
+    multi::many1,
+    sequence::delimited,
+    sequence::{pair, preceded, tuple},
+    Finish, IResult,
 };
 
 /*
@@ -36,8 +45,58 @@ pub fn run_uci() -> Result<()> {
             }
             UCICommand::SetOption => Ok(()), // TODO
             UCICommand::IsReady => respond(UCIResponse::ReadyOk),
-            UCICommand::Position(new_board) => {
+            UCICommand::Position(mut new_board, moves) => {
+                if let Some(moves) = moves {
+                    for mut mv in moves.iter() {
+                        // This is a little hacky. UCI specifies castling moves
+                        // as e1g1 (for kingside white). In order to convert that
+                        // to a `Move` variant, we need to introspect the board
+                        // here. TODO: use the UCI format internally?
+
+                        mv = match mv {
+                            // white
+                            Move::Single { from, to }
+                                if *from == E1
+                                    && *to == G1
+                                    && new_board.piece_on_square(E1)
+                                        == Some(Piece(KING, Color::WHITE)) =>
+                            {
+                                &Move::CastleKingside
+                            }
+                            Move::Single { from, to }
+                                if *from == E1
+                                    && *to == C1
+                                    && new_board.piece_on_square(E1)
+                                        == Some(Piece(KING, Color::WHITE)) =>
+                            {
+                                &Move::CastleQueenside
+                            }
+                            // black
+                            Move::Single { from, to }
+                                if *from == E8
+                                    && *to == G8
+                                    && new_board.piece_on_square(E8)
+                                        == Some(Piece(KING, Color::BLACK)) =>
+                            {
+                                &Move::CastleKingside
+                            }
+                            Move::Single { from, to }
+                                if *from == E8
+                                    && *to == C8
+                                    && new_board.piece_on_square(E8)
+                                        == Some(Piece(KING, Color::BLACK)) =>
+                            {
+                                &Move::CastleQueenside
+                            }
+                            _ => mv,
+                        };
+
+                        new_board = new_board.make_move(*mv)?;
+                    }
+                }
+
                 board = Some(new_board); // set state
+
                 Ok(())
             }
             UCICommand::Go => {
@@ -105,7 +164,21 @@ fn parse_uci_input(input: &str) -> Result<UCICommand> {
 
         let (i, board) = alt((fen, startpos))(i)?;
 
-        Ok((i, UCICommand::Position(board)))
+        // Finally, parse optional `moves`, for example:
+        // > position startpos moves e2e4 a7a6 d2d4
+
+        // TODO: ensure promotion can be parsed
+        fn mv(i: &str) -> IResult<&str, Move> {
+            let (i, (from, to)) = pair(fen::square_parser, fen::square_parser)(i)?;
+            Ok((i, Move::Single { from, to }))
+        }
+
+        let (i, maybe_moves) = opt(preceded(
+            preceded(space1, tag("moves")),
+            many1(preceded(space1, mv)),
+        ))(i)?;
+
+        Ok((i, UCICommand::Position(board, maybe_moves)))
     }
 
     alt((uci, set_option, quit, stop, is_ready, position, go))(input)
@@ -122,7 +195,7 @@ fn parse_uci_input(input: &str) -> Result<UCICommand> {
 #[derive(Debug)]
 enum UCICommand {
     UCI,
-    Position(Board),
+    Position(Board, Option<Vec<Move>>),
     SetOption, // TODO: parse name / value
     Quit,
     IsReady,

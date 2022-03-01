@@ -21,7 +21,7 @@ pub type Result<T> = std::result::Result<T, BoardError>;
  * - ingest lichess puzzles in a test suite
  */
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Piece(pub u8, pub Color);
 
 impl Piece {
@@ -258,6 +258,10 @@ impl Board {
             Some(piece) if piece.color() == color => true,
             _ => false,
         }
+    }
+
+    pub fn piece_on_square(&self, square: Square) -> Option<Piece> {
+        Piece::from(self.board[square.index()])
     }
 
     fn is_in_check(&self, color: Color) -> Result<bool> {
