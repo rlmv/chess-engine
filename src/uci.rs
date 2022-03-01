@@ -140,7 +140,7 @@ impl fmt::Display for UCIResponse {
             UCIResponse::Id => write!(f, "id name chess-engine id author Bo"),
             UCIResponse::Ok => write!(f, "uciok"),
             UCIResponse::ReadyOk => write!(f, "readyok"),
-            UCIResponse::BestMove { mv } => write!(f, "bestmove {}", mv),
+            UCIResponse::BestMove { mv } => write!(f, "bestmove {}", mv.to_string().to_lowercase()), // UCI really wants lowercase moves
             UCIResponse::Option(s) => write!(f, "option {}", s),
         }?;
 
