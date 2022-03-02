@@ -21,7 +21,7 @@ pub type Result<T> = std::result::Result<T, BoardError>;
  * - ingest lichess puzzles in a test suite
  */
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Copy)]
 pub struct Piece(pub u8, pub Color);
 
 impl Piece {
@@ -114,7 +114,7 @@ impl CastleRights {
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub struct Board {
     board: [u8; 64],
-    color_to_move: Color,
+    pub color_to_move: Color,
     en_passant_target: Option<Square>,
     // # of moves since last capture or pawn advance. For enforcing the 50-move rule.
     halfmove_clock: u16,
@@ -174,6 +174,7 @@ impl Board {
     pub fn make_move(&self, mv: Move) -> Result<Board> {
         let mut new = match mv {
             Move::Single { from, to } => self._move_piece(from, to),
+            Move::Promote { from, to, piece } => self.promote_pawn(from, to, piece),
             Move::CastleKingside => self.castle_kingside(self.color_to_move),
             Move::CastleQueenside => self.castle_queenside(self.color_to_move),
         }?;
@@ -291,6 +292,27 @@ impl Board {
         Ok(new)
     }
 
+    fn promote_pawn(&self, from: Square, to: Square, piece: Piece) -> Result<Board> {
+        let mut new = self.clone();
+
+        assert!(piece.color() == self.color_to_move);
+        assert!(self.piece_on_square(from).map(|p| p.color()) == Some(self.color_to_move));
+
+        // TODO: check that this is actually a promoting move. Can we impose type constraints?
+
+        let i = from.index();
+        let j = to.index();
+
+        if new.board[i] & PIECE_MASK == EMPTY {
+            return Err(NoPieceOnFromSquare(from));
+        }
+
+        new.board[j] = piece.encode();
+        new.board[i] = EMPTY;
+
+        Ok(new)
+    }
+
     fn is_occupied(&self, square: usize) -> bool {
         !self.is_empty(square)
     }
@@ -366,7 +388,7 @@ impl Board {
 
         match Piece::from(self.board[from.index()]) {
             None => Err(NoPieceOnFromSquare(from)),
-            Some(p) if p.piece() == PAWN => Ok(cross_product(from, self._pawn_moves(from, &p))),
+            Some(p) if p.piece() == PAWN => Ok(self._pawn_moves(from, &p)),
             Some(p) if p.piece() == KNIGHT => Ok(cross_product(from, self._knight_moves(from, &p))),
             Some(p) if p.piece() == BISHOP => Ok(cross_product(from, self._bishop_moves(from, &p))),
             Some(p) if p.piece() == ROOK => Ok(cross_product(from, self._rook_moves(from, &p))),
@@ -440,13 +462,13 @@ impl Board {
         targets
     }
 
-    fn _pawn_moves(&self, from: Square, piece: &Piece) -> Vec<Square> {
+    fn _pawn_moves(&self, from: Square, pawn: &Piece) -> Vec<Move> {
         let mut moves: Vec<Square> = Vec::new();
 
         assert!(*from.rank() != Rank::_1);
         assert!(*from.rank() != Rank::_8);
 
-        let (start_rank, move_vector, capture_vectors) = match piece.color() {
+        let (start_rank, move_vector, capture_vectors) = match pawn.color() {
             WHITE => (
                 Rank::_2,
                 MoveVector(0, 1),
@@ -477,16 +499,32 @@ impl Board {
             .iter()
             .filter_map(|v| Board::plus_vector(&from, v))
         {
-            if self.can_capture(target.index(), piece.color()) {
+            if self.can_capture(target.index(), pawn.color()) {
                 moves.push(target);
             }
         }
 
         // TODO: en passant capture
 
-        // TODO: promotion
-
         moves
+            .iter()
+            .flat_map(|mv| match mv {
+                to if *to.rank() == Rank::_1 || *to.rank() == Rank::_8 => {
+                    vec![QUEEN, ROOK, BISHOP, KNIGHT]
+                        .into_iter()
+                        .map(|new_piece| Move::Promote {
+                            from: from,
+                            to: *to,
+                            piece: Piece(new_piece, pawn.color()),
+                        })
+                        .collect()
+                }
+                to => vec![Move::Single {
+                    from: from,
+                    to: *to,
+                }],
+            })
+            .collect()
     }
 
     // TODO: this "ignore_king_jeopardy" flag feels hacky. Is there a way to
@@ -902,11 +940,19 @@ impl fmt::Display for TraversalPath<'_> {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Move {
     CastleKingside,
     CastleQueenside,
-    Single { from: Square, to: Square },
+    Single {
+        from: Square,
+        to: Square,
+    },
+    Promote {
+        from: Square,
+        to: Square,
+        piece: Piece,
+    },
 }
 
 impl Move {
@@ -921,41 +967,44 @@ impl From<(Square, Square)> for Move {
     }
 }
 
-impl PartialOrd for Move {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
+// impl PartialOrd for Move {
+//     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+//         Some(self.cmp(other))
+//     }
+// }
 
-impl Ord for Move {
-    fn cmp(&self, other: &Self) -> Ordering {
-        match (*self, *other) {
-            (Move::CastleKingside, Move::CastleKingside) => Ordering::Equal,
-            (Move::CastleKingside, _) => Ordering::Greater,
-            (Move::CastleQueenside, Move::CastleKingside) => Ordering::Less,
-            (Move::CastleQueenside, Move::CastleQueenside) => Ordering::Equal,
-            (Move::CastleQueenside, _) => Ordering::Greater,
-            (
-                Move::Single {
-                    from: from1,
-                    to: to1,
-                },
-                Move::Single {
-                    from: from2,
-                    to: to2,
-                },
-            ) => (from1, to1).cmp(&(from2, to2)),
+// impl Ord for Move {
+//     fn cmp(&self, other: &Self) -> Ordering {
+//         match (*self, *other) {
+//             (Move::CastleKingside, Move::CastleKingside) => Ordering::Equal,
+//             (Move::CastleKingside, _) => Ordering::Greater,
+//             (Move::CastleQueenside, Move::CastleKingside) => Ordering::Less,
+//             (Move::CastleQueenside, Move::CastleQueenside) => Ordering::Equal,
+//             (Move::CastleQueenside, _) => Ordering::Greater,
+//             (
+//                 Move::Single {
+//                     from: from1,
+//                     to: to1,
+//                 },
+//                 Move::Single {
+//                     from: from2,
+//                     to: to2,
+//                 },
+//             ) => (from1, to1).cmp(&(from2, to2)),
 
-            (_, Move::CastleKingside) => Ordering::Less,
-            (_, Move::CastleQueenside) => Ordering::Less,
-        }
-    }
-}
+//             (_, Move::CastleKingside) => Ordering::Less,
+//             (_, Move::CastleQueenside) => Ordering::Less,
+//         }
+//     }
+// }
 
 impl fmt::Display for Move {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Move::Single { from, to } => write!(f, "{}{}", from, to),
+            Move::Promote { from, to, piece } => {
+                write!(f, "{}{}{}", from, to, square_symbol(piece))
+            }
             Move::CastleKingside => write!(f, "0-0"),
             Move::CastleQueenside => write!(f, "0-0-0"),
         }
@@ -1796,6 +1845,58 @@ fn test_pawn_cannot_capture_around_edge_of_board() {
     assert_eq!(
         sorted(board.possible_moves(H3, false).unwrap()),
         sorted(vec![(H3, H4).into()])
+    );
+}
+
+#[test]
+fn test_pawn_promote_to_queen() {
+    init();
+
+    let board = crate::fen::parse("5k2/1P6/8/8/2B5/K5Pp/1P5P/8 w - - 1 55").unwrap();
+
+    assert_eq!(
+        sorted(board.possible_moves(B7, false).unwrap()),
+        sorted(vec![
+            Move::Promote {
+                from: B7,
+                to: B8,
+                piece: Piece(QUEEN, Color::WHITE)
+            },
+            Move::Promote {
+                from: B7,
+                to: B8,
+                piece: Piece(ROOK, Color::WHITE)
+            },
+            Move::Promote {
+                from: B7,
+                to: B8,
+                piece: Piece(BISHOP, Color::WHITE)
+            },
+            Move::Promote {
+                from: B7,
+                to: B8,
+                piece: Piece(KNIGHT, Color::WHITE)
+            }
+        ])
+    );
+
+    // TODO: this should be the best move when searching greater depths
+    let (best_move, _) = board.find_next_move(2).unwrap().unwrap();
+
+    assert_eq!(
+        best_move,
+        Move::Promote {
+            from: B7,
+            to: B8,
+            piece: Piece(QUEEN, Color::WHITE)
+        }
+    );
+
+    let moved_board = board.make_move(best_move).unwrap();
+
+    assert_eq!(
+        moved_board,
+        crate::fen::parse("1Q3k2/8/8/8/2B5/K5Pp/1P5P/8 b - - 1 55").unwrap()
     );
 }
 

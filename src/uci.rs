@@ -11,10 +11,10 @@ use nom::{
     self,
     branch::alt,
     bytes::complete::tag,
-    character::complete::space1,
+    character::complete::{one_of, space1},
     combinator::{map, opt},
     multi::many1,
-    sequence::{pair, preceded},
+    sequence::{preceded, tuple},
     Finish, IResult,
 };
 
@@ -46,13 +46,13 @@ pub fn run_uci() -> Result<()> {
             UCICommand::IsReady => respond(UCIResponse::ReadyOk),
             UCICommand::Position(mut new_board, moves) => {
                 if let Some(moves) = moves {
-                    for mut mv in moves.iter() {
+                    for mv in moves.iter() {
                         // This is a little hacky. UCI specifies castling moves
                         // as e1g1 (for kingside white). In order to convert that
                         // to a `Move` variant, we need to introspect the board
                         // here. TODO: use the UCI format internally?
 
-                        mv = match mv {
+                        let fixed_move = match mv {
                             // white
                             Move::Single { from, to }
                                 if *from == E1
@@ -60,7 +60,7 @@ pub fn run_uci() -> Result<()> {
                                     && new_board.piece_on_square(E1)
                                         == Some(Piece(KING, Color::WHITE)) =>
                             {
-                                &Move::CastleKingside
+                                Move::CastleKingside
                             }
                             Move::Single { from, to }
                                 if *from == E1
@@ -68,7 +68,7 @@ pub fn run_uci() -> Result<()> {
                                     && new_board.piece_on_square(E1)
                                         == Some(Piece(KING, Color::WHITE)) =>
                             {
-                                &Move::CastleQueenside
+                                Move::CastleQueenside
                             }
                             // black
                             Move::Single { from, to }
@@ -77,7 +77,7 @@ pub fn run_uci() -> Result<()> {
                                     && new_board.piece_on_square(E8)
                                         == Some(Piece(KING, Color::BLACK)) =>
                             {
-                                &Move::CastleKingside
+                                Move::CastleKingside
                             }
                             Move::Single { from, to }
                                 if *from == E8
@@ -85,12 +85,25 @@ pub fn run_uci() -> Result<()> {
                                     && new_board.piece_on_square(E8)
                                         == Some(Piece(KING, Color::BLACK)) =>
                             {
-                                &Move::CastleQueenside
+                                Move::CastleQueenside
                             }
-                            _ => mv,
+
+                            // Same hackiness with promotion. We don't know the
+                            // color of the piece when parsing a promotion,
+                            // update it here.
+                            Move::Promote {
+                                from,
+                                to,
+                                piece: Piece(unit, _),
+                            } => Move::Promote {
+                                from: *from,
+                                to: *to,
+                                piece: Piece(*unit, new_board.color_to_move),
+                            },
+                            _ => *mv,
                         };
 
-                        new_board = new_board.make_move(*mv)?;
+                        new_board = new_board.make_move(fixed_move)?;
                     }
                 }
 
@@ -168,8 +181,30 @@ fn parse_uci_input(input: &str) -> Result<UCICommand> {
 
         // TODO: ensure promotion can be parsed
         fn mv(i: &str) -> IResult<&str, Move> {
-            let (i, (from, to)) = pair(fen::square_parser, fen::square_parser)(i)?;
-            Ok((i, Move::Single { from, to }))
+            let (i, (from, to, promotion)) = tuple((
+                fen::square_parser,
+                fen::square_parser,
+                opt(map(one_of("nbrq"), |c| match c {
+                    'n' => KNIGHT,
+                    'b' => BISHOP,
+                    'r' => ROOK,
+                    'q' => QUEEN,
+                    _ => panic!(""),
+                })),
+            ))(i)?;
+
+            Ok((
+                i,
+                match promotion {
+                    Some(piece) => Move::Promote {
+                        from,
+                        to,
+                        // TODO: HACK we don't know the proper color of the piece here
+                        piece: Piece(piece, crate::color::WHITE),
+                    },
+                    None => Move::Single { from, to },
+                },
+            ))
         }
 
         let (i, maybe_moves) = opt(preceded(
