@@ -185,7 +185,9 @@ impl Board {
     fn castle_kingside(&self, color: Color) -> Result<Board> {
         let mut new = self.clone();
 
-        // TODO: ensure not attacked, still allowed
+        if !new.can_castle_kingside(color) {
+            return Err(IllegalCastle);
+        }
 
         if color == Color::WHITE {
             new.board[G1.index()] = new.board[E1.index()];
@@ -211,7 +213,9 @@ impl Board {
     fn castle_queenside(&self, color: Color) -> Result<Board> {
         let mut new = self.clone();
 
-        // TODO: ensure not attacked, still allowed
+        if !new.can_castle_queenside(color) {
+            return Err(IllegalCastle);
+        }
 
         if color == Color::WHITE {
             new.board[C1.index()] = new.board[E1.index()];
@@ -232,6 +236,40 @@ impl Board {
         }
 
         Ok(new)
+    }
+
+    fn can_castle_kingside(&self, color: Color) -> bool {
+        // TODO: ensure not attacked
+        match color {
+            Color::WHITE => {
+                self.can_castle.kingside_white
+                    && self.is_empty(F1.index())
+                    && self.is_empty(G1.index())
+            }
+            Color::BLACK => {
+                self.can_castle.kingside_black
+                    && self.is_empty(F8.index())
+                    && self.is_empty(G8.index())
+            }
+        }
+    }
+
+    fn can_castle_queenside(&self, color: Color) -> bool {
+        // TODO: ensure not attacked
+        match color {
+            Color::WHITE => {
+                self.can_castle.queenside_white
+                    && self.is_empty(B1.index())
+                    && self.is_empty(C1.index())
+                    && self.is_empty(D1.index())
+            }
+            Color::BLACK => {
+                self.can_castle.queenside_black
+                    && self.is_empty(B8.index())
+                    && self.is_empty(C8.index())
+                    && self.is_empty(D8.index())
+            }
+        }
     }
 
     fn _move_piece(&self, from: Square, to: Square) -> Result<Board> {
@@ -352,40 +390,13 @@ impl Board {
             })
             .collect();
 
-        if color == Color::WHITE {
-            // TODO: must not be attacked
-            if self.can_castle.kingside_white
-                && self.is_empty(F1.index())
-                && self.is_empty(G1.index())
-            {
-                moves.push(Move::CastleKingside)
-            }
+        if self.can_castle_kingside(color) {
+            moves.push(Move::CastleKingside);
+        };
 
-            // TODO: must not be attacked
-            if self.can_castle.queenside_white
-                && self.is_empty(B1.index())
-                && self.is_empty(C1.index())
-                && self.is_empty(D1.index())
-            {
-                moves.push(Move::CastleQueenside)
-            }
-        } else {
-            if self.can_castle.kingside_black
-                && self.is_empty(F8.index())
-                && self.is_empty(G8.index())
-            {
-                moves.push(Move::CastleKingside)
-            }
-
-            // TODO: must not be attacked
-            if self.can_castle.queenside_black
-                && self.is_empty(B8.index())
-                && self.is_empty(C8.index())
-                && self.is_empty(D8.index())
-            {
-                moves.push(Move::CastleQueenside)
-            }
-        }
+        if self.can_castle_queenside(color) {
+            moves.push(Move::CastleQueenside)
+        };
 
         Ok(moves)
     }

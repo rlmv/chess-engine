@@ -12,6 +12,7 @@ pub enum BoardError {
     ParseError(String),
     IOError(String),
     ProtocolError(String),
+    IllegalCastle, // TODO provide reason
 }
 
 impl fmt::Display for BoardError {
@@ -23,6 +24,7 @@ impl fmt::Display for BoardError {
             ParseError(msg) => write!(f, "{}", msg),
             IOError(msg) => write!(f, "{}", msg),
             ProtocolError(msg) => write!(f, "{}", msg),
+            IllegalCastle => write!(f, "Not allowed to castle in this position"),
         }
     }
 }
