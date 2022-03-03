@@ -26,24 +26,41 @@ use nom::{
 pub fn run_uci() -> Result<()> {
     info!("UCI: starting new session");
 
-    let mut board: Option<Board> = None;
+    let mut interface = UCIInterface::new();
 
     loop {
         let mut buffer = String::new();
         read_line(&mut buffer)?;
-        let command = parse_uci_input(&buffer)?;
 
+        let command = parse_uci_input(&buffer)?;
+        let responses = interface.run_command(command)?;
+
+        for response in responses.into_iter().flatten() {
+            respond(response)?;
+        }
+    }
+}
+
+// UCI state machine
+struct UCIInterface {
+    board: Option<Board>,
+}
+
+impl UCIInterface {
+    fn new() -> UCIInterface {
+        UCIInterface { board: None }
+    }
+
+    fn run_command(&mut self, command: UCICommand) -> Result<Option<Vec<UCIResponse>>> {
         match command {
-            UCICommand::UCI => {
-                respond(UCIResponse::Id)?;
+            UCICommand::UCI => Ok(Some(vec![
+                UCIResponse::Id,
                 // TODO: options
-                respond(UCIResponse::Option(
-                    "name Hash type spin default 1 min 1 max 128".to_string(),
-                ))?;
-                respond(UCIResponse::Ok)
-            }
-            UCICommand::SetOption => Ok(()), // TODO
-            UCICommand::IsReady => respond(UCIResponse::ReadyOk),
+                UCIResponse::Option("name Hash type spin default 1 min 1 max 128".to_string()),
+                UCIResponse::Ok,
+            ])),
+            UCICommand::SetOption => Ok(None), // TODO
+            UCICommand::IsReady => Ok(Some(vec![UCIResponse::ReadyOk])),
             UCICommand::Position(mut new_board, moves) => {
                 if let Some(moves) = moves {
                     for mv in moves.iter() {
@@ -107,17 +124,17 @@ pub fn run_uci() -> Result<()> {
                     }
                 }
 
-                board = Some(new_board); // set state
+                self.board = Some(new_board); // set state
 
-                Ok(())
+                Ok(None)
             }
             UCICommand::Go => {
-                if let Some(board) = board {
+                if let Some(board) = self.board {
                     let depth = 4; //  TODO configure depth
                     let mv = board.find_next_move(depth)?;
 
                     if let Some((mv, _)) = mv {
-                        respond(UCIResponse::BestMove { mv: mv })
+                        Ok(Some(vec![UCIResponse::BestMove { mv: mv }]))
                     } else {
                         Err(BoardError::ProtocolError(
                             "No move found. In checkmate?".to_string(),
@@ -127,12 +144,10 @@ pub fn run_uci() -> Result<()> {
                     Err(BoardError::ProtocolError("No board setup".to_string()))
                 }
             }
-            UCICommand::Quit => break,
-            UCICommand::Stop => Ok(()), // TODO
-        }?;
+            UCICommand::Quit => Err(BoardError::NotImplemented),
+            UCICommand::Stop => Ok(None), // TODO
+        }
     }
-
-    Ok(())
 }
 
 fn read_line(buffer: &mut String) -> Result<()> {
@@ -142,6 +157,9 @@ fn read_line(buffer: &mut String) -> Result<()> {
     info!("UCI: got input {}", buffer);
     Ok(())
 }
+
+// TODO why does this panic?
+// position startpos moves e2e4 a7a6 d2d4 a6a5 d4d5 e7e5 g1f3 a5a4 b1c3 c7c6 c1e3 a4a3 f1c4 a3b2 a1b1 d8a5 e3d2 a5c5 d1e2 c5a5 b1b2 a5c5 d2e3 c5a5 e3d2 a5c5 f3e5 c5d6 e1g1 d6e5 d5c6
 
 fn parse_uci_input(input: &str) -> Result<UCICommand> {
     let uci = map(tag("uci"), |_: &str| UCICommand::UCI);
@@ -168,7 +186,7 @@ fn parse_uci_input(input: &str) -> Result<UCICommand> {
 
         fn startpos(i: &str) -> IResult<&str, Board> {
             let (i, _) = tag("startpos")(i)?;
-            // TODO: better way to initialize starting board
+            // TODO: better way to initialize starting board?
             let board =
                 fen::parse("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1").unwrap(); // TODO no unwrap
             Ok((i, board))
@@ -266,4 +284,26 @@ fn respond(msg: UCIResponse) -> Result<()> {
     io::stdout()
         .write_all(msg.to_string().as_bytes())
         .map_err(|e| BoardError::IOError(format!("IO error: {}", e)))
+}
+
+#[cfg(test)]
+fn init() {
+    let _ = env_logger::builder().is_test(true).try_init();
+}
+
+#[test]
+fn test_king_cannot_be_captured_by_pawn_promotion() {
+    init();
+    let mut interface = UCIInterface::new();
+
+    // rnb1kbnr/1p1P1ppp/8/5q2/2B1P3/2N5/PRPBQPPP/5RK1 b kq - 0 17
+    let commands = vec![
+        "position startpos moves e2e4 a7a6 d2d4 a6a5 d4d5 e7e5 g1f3 a5a4 b1c3 c7c6 c1e3 a4a3 f1c4 a3b2 a1b1 d8a5 e3d2 a5c5 d1e2 c5a5 b1b2 a5c5 d2e3 c5a5 e3d2 a5c5 f3e5 c5d6 e1g1 d6e5 d5c6 e5f5 c6d7",
+        "go"
+    ];
+
+    for command_str in commands.iter() {
+        let command = parse_uci_input(command_str).unwrap();
+        interface.run_command(command).unwrap();
+    }
 }

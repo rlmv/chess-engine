@@ -369,12 +369,18 @@ impl Board {
                 && self
                     .possible_moves(Square::from_index(i), true)?
                     .iter()
-                    .find_map(|mv| match mv {
-                        Move::Single { from: _, to } if to == &Square::from_index(square) => {
-                            Some(to)
-                        }
-                        _ => None,
+                    // Find square the move threatens to capture
+                    .filter_map(|mv| match mv {
+                        Move::Single { from: _, to } => Some(to),
+                        Move::Promote {
+                            from: _,
+                            to,
+                            piece: _,
+                        } => Some(to),
+                        Move::CastleKingside => None,
+                        Move::CastleQueenside => None,
                     })
+                    .find(|captures_square| *captures_square == &Square::from_index(square))
                     .is_some()
             {
                 return Ok(true);
