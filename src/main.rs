@@ -62,7 +62,7 @@ fn configure_logging() -> () {
     log_panics::init();
 
     let file = FileAppender::builder()
-        .build("/home/bo/.scidvspc/log/internal.log")
+        .build("/home/bo/Code/chess-engine/out.log")
         .unwrap();
 
     let config = Config::builder()
