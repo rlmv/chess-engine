@@ -186,7 +186,7 @@ impl Board {
     fn castle_kingside(&self, color: Color) -> Result<Board> {
         let mut new = self.clone();
 
-        if !new.can_castle_kingside(color) {
+        if !new.can_castle_kingside(color)? {
             return Err(IllegalCastle);
         }
 
@@ -214,7 +214,7 @@ impl Board {
     fn castle_queenside(&self, color: Color) -> Result<Board> {
         let mut new = self.clone();
 
-        if !new.can_castle_queenside(color) {
+        if !new.can_castle_queenside(color)? {
             return Err(IllegalCastle);
         }
 
@@ -239,38 +239,52 @@ impl Board {
         Ok(new)
     }
 
-    fn can_castle_kingside(&self, color: Color) -> bool {
-        // TODO: ensure not attacked
-        match color {
+    fn can_castle_kingside(&self, color: Color) -> Result<bool> {
+        let allowed = match color {
             Color::WHITE => {
                 self.can_castle.kingside_white
                     && self.is_empty(F1.index())
                     && self.is_empty(G1.index())
+                    && !self.attacked_by_color(E1.index(), color.opposite())?
+                    && !self.attacked_by_color(F1.index(), color.opposite())?
+                    && !self.attacked_by_color(G1.index(), color.opposite())?
             }
             Color::BLACK => {
                 self.can_castle.kingside_black
                     && self.is_empty(F8.index())
                     && self.is_empty(G8.index())
+                    && !self.attacked_by_color(E8.index(), color.opposite())?
+                    && !self.attacked_by_color(F8.index(), color.opposite())?
+                    && !self.attacked_by_color(G8.index(), color.opposite())?
             }
-        }
+        };
+
+        Ok(allowed)
     }
 
-    fn can_castle_queenside(&self, color: Color) -> bool {
-        // TODO: ensure not attacked
-        match color {
+    fn can_castle_queenside(&self, color: Color) -> Result<bool> {
+        let allowed = match color {
             Color::WHITE => {
                 self.can_castle.queenside_white
                     && self.is_empty(B1.index())
                     && self.is_empty(C1.index())
                     && self.is_empty(D1.index())
+                    && !self.attacked_by_color(C1.index(), color.opposite())?
+                    && !self.attacked_by_color(D1.index(), color.opposite())?
+                    && !self.attacked_by_color(E1.index(), color.opposite())?
             }
             Color::BLACK => {
                 self.can_castle.queenside_black
                     && self.is_empty(B8.index())
                     && self.is_empty(C8.index())
                     && self.is_empty(D8.index())
+                    && !self.attacked_by_color(C8.index(), color.opposite())?
+                    && !self.attacked_by_color(D8.index(), color.opposite())?
+                    && !self.attacked_by_color(E8.index(), color.opposite())?
             }
-        }
+        };
+
+        Ok(allowed)
     }
 
     fn _move_piece(&self, from: Square, to: Square) -> Result<Board> {
@@ -418,11 +432,11 @@ impl Board {
             })
             .collect();
 
-        if self.can_castle_kingside(color) {
+        if self.can_castle_kingside(color)? {
             moves.push(Move::CastleKingside);
         };
 
-        if self.can_castle_queenside(color) {
+        if self.can_castle_queenside(color)? {
             moves.push(Move::CastleQueenside)
         };
 
@@ -1232,6 +1246,60 @@ fn test_castle_kingside_white_not_allowed_if_king_has_moved() {
 
     let board =
         crate::fen::parse("r1bqk2r/ppp2ppp/2np1n2/1Bb1p3/4P3/5N2/PPPP1PPP/RNBQK2R w kq - 0 6")
+            .unwrap();
+
+    assert!(!board
+        .all_moves(Color::WHITE)
+        .unwrap()
+        .iter()
+        .map(|mv| *mv)
+        .collect::<Vec<Move>>()
+        .contains(&Move::CastleKingside));
+}
+
+#[test]
+fn test_castle_kingside_white_not_allowed_if_e1_under_attack() {
+    init();
+
+    // B4 bishop attacks E1
+    let board =
+        crate::fen::parse("rn1qk2r/pbpp1ppp/1p2pn2/8/1bPP4/3BPN2/PP3PPP/RNBQK2R w KQkq - 3 6")
+            .unwrap();
+
+    assert!(!board
+        .all_moves(Color::WHITE)
+        .unwrap()
+        .iter()
+        .map(|mv| *mv)
+        .collect::<Vec<Move>>()
+        .contains(&Move::CastleKingside));
+}
+
+#[test]
+fn test_castle_kingside_white_not_allowed_if_f1_under_attack() {
+    init();
+
+    // A6 bishop attacks F1
+    let board =
+        crate::fen::parse("rn1qkbnr/p1p1pppp/bp6/3p4/4P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 0 4")
+            .unwrap();
+
+    assert!(!board
+        .all_moves(Color::WHITE)
+        .unwrap()
+        .iter()
+        .map(|mv| *mv)
+        .collect::<Vec<Move>>()
+        .contains(&Move::CastleKingside));
+}
+
+#[test]
+fn test_castle_kingside_white_not_allowed_if_g1_under_attack() {
+    init();
+
+    // G5 queen attacks E1
+    let board =
+        crate::fen::parse("rnb1kb1r/ppp2ppp/3pp3/4P1q1/2B5/4PN2/PPP2P1P/RNBQK2R w KQkq - 1 7")
             .unwrap();
 
     assert!(!board
