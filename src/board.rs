@@ -700,17 +700,17 @@ impl Board {
         // Make each move - evaluate the position.
         // Pick highest scoring move
 
-        // Evaluate stalemate?
-
         if depth == 0 {
             return Ok((None, self.evaluate_position()?, path.into()));
         } else if self.checkmate(self.color_to_move)? {
             debug!("Position is checkmate for {}", self.color_to_move);
 
             return match self.color_to_move {
-                WHITE => Ok((None, Score::MIN.plus(1), path.into())),
-                BLACK => Ok((None, Score::MAX.minus(1), path.into())),
+                WHITE => Ok((None, Score::checkmate_white(), path.into())),
+                BLACK => Ok((None, Score::checkmate_black(), path.into())),
             };
+        } else if self.stalemate(self.color_to_move)? {
+            return Ok((None, Score::ZERO, path.into()));
         }
 
         let all_moves = self.all_moves(self.color_to_move)?;
@@ -738,13 +738,15 @@ impl Board {
             let moved_path = path.append(&mv);
 
             debug!(
-                "{}: Evaluating move {}. Initial α={} β={}",
-                self.color_to_move, moved_path, alpha, beta
+                "{}: Evaluating move {} initial score={} α={} β={}",
+                self.color_to_move, moved_path, best_score, alpha, beta
             );
 
             // Cannot move into check. This helps verify that the position
             // is not checkmate: if the recursive call below returns no
             // moves then the position is mate
+            //
+            // TODO: this is confusing. Cleaner way to handle this? Filter all moves to only return legal moves?
             if moved_board.is_in_check(self.color_to_move)? {
                 debug!(
                     "{}: Continue. In check after move {}{}",
@@ -752,8 +754,6 @@ impl Board {
                 );
                 continue;
             }
-
-            // TODO: adjust the above for stalemate
 
             // Evaluate board score at leaf nodes
             let (_, score, mainline) =
@@ -766,7 +766,10 @@ impl Board {
             match self.color_to_move {
                 WHITE => {
                     alpha = cmp::max(alpha, score);
-                    if score > best_score {
+                    if score > best_score
+                        // shortest line is best, this picks the quickest forced mate sequence
+                        || (score == best_score && mainline.len() < best_path.len())
+                    {
                         best_score = score;
                         best_move = Some(*mv);
                         best_path = mainline.clone();
@@ -774,7 +777,9 @@ impl Board {
                 }
                 BLACK => {
                     beta = cmp::min(beta, score);
-                    if score < best_score {
+                    if score < best_score
+                        || (score == best_score && mainline.len() < best_path.len())
+                    {
                         best_score = score;
                         best_move = Some(*mv);
                         best_path = mainline.clone();
@@ -783,21 +788,14 @@ impl Board {
             }
 
             debug!(
-                "{}: Evaluated move {} {} score={} α={} β={}",
-                self.color_to_move,
-                path,
-                //                square_symbol(piece),
-                mv,
-                score,
-                alpha,
-                beta
+                "{}: Evaluated move {} score={} α={} β={}",
+                self.color_to_move, moved_path, score, alpha, beta
             );
 
             if alpha >= beta {
                 debug!("Found α={} >= β={}. Pruning rest of node.", alpha, beta);
                 return Ok((Some(*mv), score, mainline));
             }
-            //            }
         }
 
         Ok((best_move, best_score, best_path))
@@ -811,10 +809,10 @@ impl Board {
     fn evaluate_position(&self) -> Result<Score> {
         if self.checkmate(BLACK)? {
             debug!("Found checkmate of {}", BLACK);
-            return Ok(Score::MAX.minus(1));
+            return Ok(Score::checkmate_black());
         } else if self.checkmate(WHITE)? {
             info!("Found checkmate of {}", WHITE);
-            return Ok(Score::MIN.plus(1));
+            return Ok(Score::checkmate_white());
         }
 
         let white_value: i32 = self
@@ -849,6 +847,27 @@ impl Board {
         }
 
         debug!("{}: Found checkmate", color);
+
+        Ok(true)
+    }
+
+    fn stalemate(&self, color: Color) -> Result<bool> {
+        if self.is_in_check(color)? {
+            return Ok(false);
+        }
+
+        debug!("{}: Evaluating for stalemate", color);
+
+        for mv in self.all_moves(color)?.iter() {
+            let moved_board = self.make_move(*mv)?;
+
+            // At least one move that avoids check
+            if !moved_board.is_in_check(color)? {
+                return Ok(false);
+            }
+        }
+
+        debug!("{}: No moves, stalemate", color);
 
         Ok(true)
     }
@@ -1023,6 +1042,15 @@ pub struct Score(i32);
 impl Score {
     pub const MAX: Score = Score(i32::MAX);
     pub const MIN: Score = Score(i32::MIN);
+    pub const ZERO: Score = Score(0);
+
+    fn checkmate_black() -> Score {
+        Score::MAX.minus(1)
+    }
+
+    fn checkmate_white() -> Score {
+        Score::MIN.plus(1)
+    }
 
     fn minus(&self, x: i32) -> Score {
         let Score(y) = self;
@@ -1549,6 +1577,22 @@ fn test_checkmate_opponent_king_and_rook_2_moves_black_to_move() {
     println!("{}", board2);
     println!("{}", board3);
     println!("{}", board4);
+}
+
+#[test]
+fn test_avoid_stalemate() {
+    init();
+    let board = crate::fen::parse("6k1/6p1/4K1P1/7r/8/3q4/8/8 b - - 3 62").unwrap();
+
+    let (mv, _) = board.find_next_move(4).unwrap().unwrap();
+    // Would be stalemate:
+    assert_ne!(mv, Move::Single { from: D3, to: D8 });
+
+    Puzzle::new(board)
+        .should_find_move(D3, D2)
+        .respond_with(E6, E7)
+        .should_find_move(H5, E5)
+        .should_be_checkmate();
 }
 
 #[test]
