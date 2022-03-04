@@ -172,71 +172,76 @@ impl Board {
     }
 
     pub fn make_move(&self, mv: Move) -> Result<Board> {
-        let mut new = match mv {
-            Move::Single { from, to } => self._move_piece(from, to),
-            Move::Promote { from, to, piece } => self.promote_pawn(from, to, piece),
-            Move::CastleKingside => self.castle_kingside(self.color_to_move),
-            Move::CastleQueenside => self.castle_queenside(self.color_to_move),
+        let mut new = self.clone();
+
+        match mv {
+            Move::Single { from, to } => new.move_piece(from, to),
+            Move::Promote { from, to, piece } => new.promote_pawn(from, to, piece),
+            Move::CastleKingside => new.castle_kingside(new.color_to_move),
+            Move::CastleQueenside => new.castle_queenside(new.color_to_move),
         }?;
 
+        // Clear old en passant target. If old and new are not equal that means
+        // that new board has a new target and should be left alone.
+        if new.en_passant_target == self.en_passant_target {
+            new.en_passant_target = None;
+        }
+
         new.color_to_move = self.color_to_move.opposite();
-        Ok(new)
-    }
-
-    fn castle_kingside(&self, color: Color) -> Result<Board> {
-        let mut new = self.clone();
-
-        if !new.can_castle_kingside(color)? {
-            return Err(IllegalCastle);
-        }
-
-        if color == Color::WHITE {
-            new.board[G1.index()] = new.board[E1.index()];
-            new.board[F1.index()] = new.board[H1.index()];
-            new.board[E1.index()] = EMPTY;
-            new.board[H1.index()] = EMPTY;
-
-            new.can_castle.kingside_white = false;
-            new.can_castle.queenside_white = false;
-        } else {
-            new.board[G8.index()] = new.board[E8.index()];
-            new.board[F8.index()] = new.board[H8.index()];
-            new.board[E8.index()] = EMPTY;
-            new.board[H8.index()] = EMPTY;
-
-            new.can_castle.kingside_black = false;
-            new.can_castle.queenside_black = false;
-        }
 
         Ok(new)
     }
 
-    fn castle_queenside(&self, color: Color) -> Result<Board> {
-        let mut new = self.clone();
-
-        if !new.can_castle_queenside(color)? {
+    fn castle_kingside(&mut self, color: Color) -> Result<()> {
+        if !self.can_castle_kingside(color)? {
             return Err(IllegalCastle);
         }
 
         if color == Color::WHITE {
-            new.board[C1.index()] = new.board[E1.index()];
-            new.board[D1.index()] = new.board[A1.index()];
-            new.board[A1.index()] = EMPTY;
-            new.board[E1.index()] = EMPTY;
+            self.board[G1.index()] = self.board[E1.index()];
+            self.board[F1.index()] = self.board[H1.index()];
+            self.board[E1.index()] = EMPTY;
+            self.board[H1.index()] = EMPTY;
 
-            new.can_castle.kingside_white = false;
-            new.can_castle.queenside_white = false;
+            self.can_castle.kingside_white = false;
+            self.can_castle.queenside_white = false;
         } else {
-            new.board[C8.index()] = new.board[E8.index()];
-            new.board[D8.index()] = new.board[A8.index()];
-            new.board[A8.index()] = EMPTY;
-            new.board[E8.index()] = EMPTY;
+            self.board[G8.index()] = self.board[E8.index()];
+            self.board[F8.index()] = self.board[H8.index()];
+            self.board[E8.index()] = EMPTY;
+            self.board[H8.index()] = EMPTY;
 
-            new.can_castle.kingside_black = false;
-            new.can_castle.queenside_black = false;
+            self.can_castle.kingside_black = false;
+            self.can_castle.queenside_black = false;
         }
 
-        Ok(new)
+        Ok(())
+    }
+
+    fn castle_queenside(&mut self, color: Color) -> Result<()> {
+        if !self.can_castle_queenside(color)? {
+            return Err(IllegalCastle);
+        }
+
+        if color == Color::WHITE {
+            self.board[C1.index()] = self.board[E1.index()];
+            self.board[D1.index()] = self.board[A1.index()];
+            self.board[A1.index()] = EMPTY;
+            self.board[E1.index()] = EMPTY;
+
+            self.can_castle.kingside_white = false;
+            self.can_castle.queenside_white = false;
+        } else {
+            self.board[C8.index()] = self.board[E8.index()];
+            self.board[D8.index()] = self.board[A8.index()];
+            self.board[A8.index()] = EMPTY;
+            self.board[E8.index()] = EMPTY;
+
+            self.can_castle.kingside_black = false;
+            self.can_castle.queenside_black = false;
+        }
+
+        Ok(())
     }
 
     fn can_castle_kingside(&self, color: Color) -> Result<bool> {
@@ -287,13 +292,11 @@ impl Board {
         Ok(allowed)
     }
 
-    fn _move_piece(&self, from: Square, to: Square) -> Result<Board> {
-        let mut new = self.clone();
-
+    fn move_piece(&mut self, from: Square, to: Square) -> Result<()> {
         let i = from.index();
         let j = to.index();
 
-        if let Some(Piece(piece, color)) = new.piece_on_square(from) {
+        if let Some(Piece(piece, color)) = self.piece_on_square(from) {
             if color != self.color_to_move {
                 return Err(IllegalMove(format!(
                     "{}{} moves a {} piece, but it is {}'s turn",
@@ -308,24 +311,22 @@ impl Board {
                 // Because from and to are on the same file the square in
                 // between is computed by finding the difference between the
                 // absolute indices in the board array
-                new.en_passant_target = Some(Square::from_index((from.index() + to.index()) / 2))
+                self.en_passant_target = Some(Square::from_index((from.index() + to.index()) / 2))
             }
         } else {
             return Err(NoPieceOnFromSquare(from));
         }
 
-        new.board[j] = new.board[i];
-        new.board[i] = EMPTY;
+        self.board[j] = self.board[i];
+        self.board[i] = EMPTY;
 
         // TODO: verify that move is valid.
         // TODO: update castling rights
 
-        Ok(new)
+        Ok(())
     }
 
-    fn promote_pawn(&self, from: Square, to: Square, piece: Piece) -> Result<Board> {
-        let mut new = self.clone();
-
+    fn promote_pawn(&mut self, from: Square, to: Square, piece: Piece) -> Result<()> {
         assert!(piece.color() == self.color_to_move);
         assert!(self.piece_on_square(from).map(|p| p.color()) == Some(self.color_to_move));
 
@@ -334,14 +335,14 @@ impl Board {
         let i = from.index();
         let j = to.index();
 
-        if new.board[i] & PIECE_MASK == EMPTY {
+        if self.board[i] & PIECE_MASK == EMPTY {
             return Err(NoPieceOnFromSquare(from));
         }
 
-        new.board[j] = piece.encode();
-        new.board[i] = EMPTY;
+        self.board[j] = piece.encode();
+        self.board[i] = EMPTY;
 
-        Ok(new)
+        Ok(())
     }
 
     fn is_occupied(&self, square: usize) -> bool {
