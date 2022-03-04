@@ -304,6 +304,7 @@ impl Board {
                 )));
             }
 
+            // Set en passant target
             if piece == PAWN
                 && from.file() == to.file()
                 && (from.rank().index() as i8 - to.rank().index() as i8).abs() == 2
@@ -312,13 +313,30 @@ impl Board {
                 // between is computed by finding the difference between the
                 // absolute indices in the board array
                 self.en_passant_target = Some(Square::from_index((from.index() + to.index()) / 2))
+
+            // Capture en passant
+            } else if piece == PAWN
+                && self.en_passant_target == Some(to)
+                && self
+                    .en_passant_target
+                    .map(|target| self.is_empty(target.index()))
+                    .unwrap_or(false)
+            {
+                // The captured piece is one rank different than the target square
+                let captured_square = match self.color_to_move {
+                    WHITE => to.index() - N_FILES,
+                    BLACK => to.index() + N_FILES,
+                };
+
+                assert!(!self.is_empty(captured_square));
+                self.board[captured_square] = EMPTY;
             }
+
+            self.board[j] = self.board[i];
+            self.board[i] = EMPTY;
         } else {
             return Err(NoPieceOnFromSquare(from));
         }
-
-        self.board[j] = self.board[i];
-        self.board[i] = EMPTY;
 
         // TODO: verify that move is valid.
         // TODO: update castling rights
@@ -531,18 +549,25 @@ impl Board {
             }
         }
 
-        // standard capture
+        // capture
 
         for target in capture_vectors
             .iter()
             .filter_map(|v| Board::plus_vector(&from, v))
         {
+            // standard capture
             if self.can_capture(target.index(), pawn.color()) {
                 moves.push(target);
+
+            // en passant capture
+            } else if let Some(en_passant_target) = self.en_passant_target {
+                if en_passant_target == target {
+                    moves.push(target);
+                }
             }
         }
 
-        // TODO: en passant capture
+        // promotion
 
         moves
             .iter()
@@ -2169,4 +2194,49 @@ fn test_clear_en_passant_target() {
             .en_passant_target,
         None
     );
+}
+
+#[test]
+fn test_en_passant_capture_white() {
+    let board =
+        crate::fen::parse("rnbqkbnr/2ppp1pp/1p6/p3PpP1/8/8/PPPP1P1P/RNBQKBNR w KQkq f6 0 5")
+            .unwrap();
+
+    assert!(board
+        .possible_moves(G5, false)
+        .unwrap()
+        .contains(&Move::Single { from: G5, to: F6 }));
+
+    assert!(board
+        .possible_moves(E5, false)
+        .unwrap()
+        .contains(&Move::Single { from: E5, to: F6 }));
+
+    let captured_board = board.make_move(Move::Single { from: E5, to: F6 }).unwrap();
+
+    assert!(captured_board.is_empty(E5.index())); // capturing pawn has moved
+    assert!(captured_board.is_empty(F5.index())); // captured pawn is gone
+    assert!(captured_board.piece_on_square(F6) == Some(Piece(PAWN, WHITE))); // capturer moved to en passant target
+}
+
+#[test]
+fn test_en_passant_capture_black() {
+    let board =
+        crate::fen::parse("rnbqkbnr/1p1ppppp/8/8/pPp2PPP/8/P1PPP3/RNBQKBNR b KQkq b3 0 5").unwrap();
+
+    assert!(board
+        .possible_moves(A4, false)
+        .unwrap()
+        .contains(&Move::Single { from: A4, to: B3 }));
+
+    assert!(board
+        .possible_moves(C4, false)
+        .unwrap()
+        .contains(&Move::Single { from: C4, to: B3 }));
+
+    let captured_board = board.make_move(Move::Single { from: A4, to: B3 }).unwrap();
+
+    assert!(captured_board.is_empty(A4.index())); // capturing pawn has moved
+    assert!(captured_board.is_empty(B4.index())); // captured pawn is gone
+    assert!(captured_board.piece_on_square(B3) == Some(Piece(PAWN, BLACK))); // capturer moved to en passant target
 }
