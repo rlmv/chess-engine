@@ -293,7 +293,24 @@ impl Board {
         let i = from.index();
         let j = to.index();
 
-        if new.board[i] & PIECE_MASK == EMPTY {
+        if let Some(Piece(piece, color)) = new.piece_on_square(from) {
+            if color != self.color_to_move {
+                return Err(IllegalMove(format!(
+                    "{}{} moves a {} piece, but it is {}'s turn",
+                    from, to, color, self.color_to_move
+                )));
+            }
+
+            if piece == PAWN
+                && from.file() == to.file()
+                && (from.rank().index() as i8 - to.rank().index() as i8).abs() == 2
+            {
+                // Because from and to are on the same file the square in
+                // between is computed by finding the difference between the
+                // absolute indices in the board array
+                new.en_passant_target = Some(Square::from_index((from.index() + to.index()) / 2))
+            }
+        } else {
             return Err(NoPieceOnFromSquare(from));
         }
 
@@ -1532,6 +1549,7 @@ fn test_can_capture() {
 #[test]
 fn test_checkmate() {
     let board = Board::empty()
+        .with_color_to_move(BLACK)
         .place_piece(Piece(ROOK, WHITE), A1)
         .place_piece(Piece(ROOK, WHITE), B2)
         .place_piece(Piece(KING, BLACK), A6);
@@ -1543,6 +1561,7 @@ fn test_checkmate() {
 fn test_can_escape_checkmate() {
     init();
     let board = Board::empty()
+        .with_color_to_move(BLACK)
         .place_piece(Piece(ROOK, WHITE), A1)
         .place_piece(Piece(ROOK, WHITE), B2)
         .place_piece(Piece(KING, BLACK), A6)
@@ -2110,4 +2129,43 @@ fn test_vector_transpose() {
         );
         assert_eq!(Board::plus_vector(start, vector), *end);
     }
+}
+
+#[test]
+fn test_record_en_passant_target() {
+    let board =
+        crate::fen::parse("rnbqkbnr/1ppppppp/p7/4P3/8/8/PPPP1PPP/RNBQKBNR b KQkq - 0 2").unwrap();
+
+    assert_eq!(
+        board
+            .make_move(Move::Single { from: D7, to: D5 })
+            .unwrap()
+            .en_passant_target,
+        Some(D6)
+    );
+
+    assert_eq!(
+        board
+            .make_move(Move::Single { from: F7, to: F5 })
+            .unwrap()
+            .en_passant_target,
+        Some(F6)
+    );
+}
+
+#[test]
+fn test_clear_en_passant_target() {
+    let board =
+        crate::fen::parse("rnbqkbnr/1ppppppp/p7/4P3/8/8/PPPP1PPP/RNBQKBNR b KQkq - 0 2").unwrap();
+
+    // En passant target is cleared after opponent makes a move
+    assert_eq!(
+        board
+            .make_move(Move::Single { from: F7, to: F5 })
+            .unwrap()
+            .make_move(Move::Single { from: D2, to: D3 })
+            .unwrap()
+            .en_passant_target,
+        None
+    );
 }

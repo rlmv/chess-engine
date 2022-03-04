@@ -13,6 +13,7 @@ pub enum BoardError {
     IOError(String),
     ProtocolError(String),
     IllegalCastle, // TODO provide reason
+    IllegalMove(String),
 }
 
 impl fmt::Display for BoardError {
@@ -25,6 +26,7 @@ impl fmt::Display for BoardError {
             IOError(msg) => write!(f, "{}", msg),
             ProtocolError(msg) => write!(f, "{}", msg),
             IllegalCastle => write!(f, "Not allowed to castle in this position"),
+            IllegalMove(msg) => write!(f, "{}", msg),
         }
     }
 }
