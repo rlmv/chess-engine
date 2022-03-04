@@ -330,6 +330,22 @@ impl Board {
 
                 assert!(!self.is_empty(captured_square));
                 self.board[captured_square] = EMPTY;
+
+            // Update castling
+            } else if piece == ROOK && color == WHITE && from == A1 {
+                self.can_castle.queenside_white = false
+            } else if piece == ROOK && color == BLACK && from == A8 {
+                self.can_castle.queenside_black = false
+            } else if piece == ROOK && color == WHITE && from == H1 {
+                self.can_castle.kingside_white = false
+            } else if piece == ROOK && color == BLACK && from == H8 {
+                self.can_castle.kingside_black = false
+            } else if piece == KING && color == WHITE && from == E1 {
+                self.can_castle.kingside_white = false;
+                self.can_castle.queenside_white = false
+            } else if piece == KING && color == BLACK && from == E8 {
+                self.can_castle.kingside_black = false;
+                self.can_castle.queenside_black = false
             }
 
             self.board[j] = self.board[i];
@@ -1444,6 +1460,143 @@ fn test_castle_queenside_black() {
         crate::fen::parse("2kr1b1r/pppq1ppp/2np1n2/4pP2/3P4/2NBBN2/PPP2PPP/R2QK2R w KQ - 2 7") // TODO fix clocks
             .unwrap()
     )
+}
+
+#[test]
+fn test_cannot_castle_after_moving_white_king() {
+    init();
+
+    let board = crate::fen::parse(
+        "r3k2r/ppp2ppp/2nq1n2/1B1pp1B1/1b1PP1b1/2NQ1N2/PPP2PPP/R3K2R w KQkq - 10 8",
+    )
+    .unwrap();
+
+    let moved_board = board
+        .make_move((E1, D1).into())
+        .unwrap()
+        .make_move((A7, A6).into())
+        .unwrap()
+        .make_move((D1, E1).into())
+        .unwrap();
+
+    assert!(!moved_board.can_castle_kingside(WHITE).unwrap());
+    assert!(moved_board.can_castle_kingside(BLACK).unwrap());
+    assert!(!moved_board.can_castle_queenside(WHITE).unwrap());
+    assert!(moved_board.can_castle_queenside(BLACK).unwrap());
+}
+
+#[test]
+fn test_cannot_castle_after_moving_black_king() {
+    init();
+
+    let board = crate::fen::parse(
+        "r3k2r/ppp2ppp/2nq1n2/1B1pp1B1/1b1PP1b1/2NQ1N1P/PPP2PP1/R3K2R b KQkq - 0 8",
+    )
+    .unwrap();
+
+    let moved_board = board
+        .make_move((E8, E7).into())
+        .unwrap()
+        .make_move((A2, A3).into())
+        .unwrap()
+        .make_move((E7, E8).into())
+        .unwrap();
+
+    assert!(moved_board.can_castle_kingside(WHITE).unwrap());
+    assert!(!moved_board.can_castle_kingside(BLACK).unwrap());
+    assert!(moved_board.can_castle_queenside(WHITE).unwrap());
+    assert!(!moved_board.can_castle_queenside(BLACK).unwrap());
+}
+
+#[test]
+fn test_cannot_castle_queenside_after_moving_a1_rook() {
+    init();
+
+    let board = crate::fen::parse(
+        "r3k2r/ppp2ppp/2nq1n2/1B1pp1B1/1b1PP1b1/2NQ1N2/PPP2PPP/R3K2R w KQkq - 10 8",
+    )
+    .unwrap();
+
+    let moved_board = board
+        .make_move((A1, B1).into())
+        .unwrap()
+        .make_move((A7, A6).into())
+        .unwrap()
+        .make_move((B1, A1).into())
+        .unwrap();
+
+    assert!(moved_board.can_castle_kingside(WHITE).unwrap());
+    assert!(moved_board.can_castle_kingside(BLACK).unwrap());
+    assert!(!moved_board.can_castle_queenside(WHITE).unwrap());
+    assert!(moved_board.can_castle_queenside(BLACK).unwrap());
+}
+
+#[test]
+fn test_cannot_castle_queenside_after_moving_a8_rook() {
+    init();
+
+    let board =
+        crate::fen::parse("r3k2r/ppp2ppp/2nq1n2/1B1pN1B1/1b1PP1b1/2NQ4/PPP2PPP/R3K2R b KQkq - 0 8")
+            .unwrap();
+
+    let moved_board = board
+        .make_move((A8, D8).into())
+        .unwrap()
+        .make_move((F2, F3).into())
+        .unwrap()
+        .make_move((D8, A8).into())
+        .unwrap();
+
+    assert!(moved_board.can_castle_kingside(WHITE).unwrap());
+    assert!(moved_board.can_castle_kingside(BLACK).unwrap());
+    assert!(moved_board.can_castle_queenside(WHITE).unwrap());
+    assert!(!moved_board.can_castle_queenside(BLACK).unwrap());
+}
+
+#[test]
+fn test_cannot_castle_kingside_after_moving_h8_rook() {
+    init();
+
+    let board = crate::fen::parse(
+        "r3k2r/ppp2ppp/2nq1n2/1B1pp1B1/1b1PP1b1/2NQ1N1P/PPP2PP1/R3K2R b KQkq - 0 8",
+    )
+    .unwrap();
+
+    let moved_board = board
+        .make_move((H8, G8).into())
+        .unwrap()
+        .make_move((A2, A3).into())
+        .unwrap()
+        .make_move((G8, H8).into())
+        .unwrap();
+
+    assert!(moved_board.can_castle_kingside(WHITE).unwrap());
+    assert!(!moved_board.can_castle_kingside(BLACK).unwrap());
+    assert!(moved_board.can_castle_queenside(WHITE).unwrap());
+    assert!(moved_board.can_castle_queenside(BLACK).unwrap());
+}
+
+#[test]
+fn test_cannot_castle_kingside_after_moving_h1_rook() {
+    init();
+
+    let board = crate::fen::parse(
+        "r3k2r/ppp2ppp/2nq1n2/1B1pp1B1/1b1PP1b1/2NQ1N2/PPP2PPP/R3K2R w KQkq - 10 8",
+    )
+    .unwrap();
+
+    let moved_board = board
+        .make_move((H1, F1).into())
+        .unwrap()
+        .make_move((A7, A6).into())
+        .unwrap()
+        .make_move((F1, H1).into())
+        .unwrap();
+
+    assert!(!moved_board.can_castle_kingside(WHITE).unwrap());
+    assert!(moved_board.can_castle_kingside(BLACK).unwrap());
+    assert!(moved_board.can_castle_queenside(WHITE).unwrap());
+    assert!(moved_board.can_castle_queenside(BLACK).unwrap());
 }
 
 #[test]
