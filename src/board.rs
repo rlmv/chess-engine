@@ -16,8 +16,6 @@ pub type Result<T> = std::result::Result<T, BoardError>;
 
 /*
  * TODO:
- *
- * - implement other pieces
  * - ingest lichess puzzles in a test suite
  */
 
@@ -189,7 +187,58 @@ impl Board {
 
         new.color_to_move = self.color_to_move.opposite();
 
+        if self.color_to_move == Color::BLACK {
+            new.fullmove_clock += 1;
+        }
+
+        if self.is_pawn_advance(mv)? || self.is_capture(mv)? {
+            new.halfmove_clock = 0;
+        } else {
+            new.halfmove_clock += 1
+        }
+
         Ok(new)
+    }
+
+    fn is_pawn_advance(&self, mv: Move) -> Result<bool> {
+        match mv {
+            Move::Single { from, to: _ } => {
+                if let Some(Piece(piece, _)) = self.piece_on_square(from) {
+                    Ok(piece == PAWN)
+                } else {
+                    Err(NoPieceOnFromSquare(from))
+                }
+            }
+            Move::Promote {
+                from: _,
+                to: _,
+                piece: _,
+            } => Ok(true),
+            Move::CastleKingside => Ok(false),
+            Move::CastleQueenside => Ok(false),
+        }
+    }
+
+    fn is_capture(&self, mv: Move) -> Result<bool> {
+        // TODO include en passant capture here
+        match mv {
+            Move::Single { from: _, to }
+            | Move::Promote {
+                from: _,
+                to,
+                piece: _,
+            } => match self.piece_on_square(to) {
+                Some(Piece(_, target_color)) if target_color == self.color_to_move.opposite() => {
+                    Ok(true)
+                }
+                Some(_) => Err(IllegalMove(
+                    "Trying to capture piece of same color".to_string(),
+                )),
+                None => Ok(false),
+            },
+            Move::CastleKingside => Ok(false),
+            Move::CastleQueenside => Ok(false),
+        }
     }
 
     fn castle_kingside(&mut self, color: Color) -> Result<()> {
@@ -355,7 +404,6 @@ impl Board {
         }
 
         // TODO: verify that move is valid.
-        // TODO: update castling rights
 
         Ok(())
     }
@@ -1294,7 +1342,7 @@ fn test_castle_kingside_white() {
 
     assert_eq!(
         castled_board,
-        crate::fen::parse("r1bqkbnr/ppp2ppp/2np4/4p3/2B1P3/5N2/PPPP1PPP/RNBQ1RK1 b kq - 0 3") // TODO: fix halfmove clock
+        crate::fen::parse("r1bqkbnr/ppp2ppp/2np4/4p3/2B1P3/5N2/PPPP1PPP/RNBQ1RK1 b kq - 1 3")
             .unwrap()
     )
 }
@@ -1390,7 +1438,7 @@ fn test_castle_queenside_white() {
 
     assert_eq!(
         castled_board,
-        crate::fen::parse("r3kbnr/ppp1pppp/2nq4/3p1b2/3P1B2/2N5/PPPQPPPP/2KR1BNR b kq - 6 5") // TODO: fix halfmove clock
+        crate::fen::parse("r3kbnr/ppp1pppp/2nq4/3p1b2/3P1B2/2N5/PPPQPPPP/2KR1BNR b kq - 7 5")
             .unwrap()
     )
 }
@@ -1432,7 +1480,7 @@ fn test_castle_kingside_black() {
 
     assert_eq!(
         castled_board,
-        crate::fen::parse("r1bq1rk1/pppp1ppp/2n2n2/4p3/1bB1P3/2N2N2/PPPP1PPP/R1BQ1RK1 w - - 7 5") // TODO fix clocks
+        crate::fen::parse("r1bq1rk1/pppp1ppp/2n2n2/4p3/1bB1P3/2N2N2/PPPP1PPP/R1BQ1RK1 w - - 8 6")
             .unwrap()
     )
 }
@@ -1457,7 +1505,7 @@ fn test_castle_queenside_black() {
 
     assert_eq!(
         castled_board,
-        crate::fen::parse("2kr1b1r/pppq1ppp/2np1n2/4pP2/3P4/2NBBN2/PPP2PPP/R2QK2R w KQ - 2 7") // TODO fix clocks
+        crate::fen::parse("2kr1b1r/pppq1ppp/2np1n2/4pP2/3P4/2NBBN2/PPP2PPP/R2QK2R w KQ - 3 8")
             .unwrap()
     )
 }
@@ -2212,7 +2260,7 @@ fn test_pawn_promote_to_queen() {
 
     assert_eq!(
         moved_board,
-        crate::fen::parse("1Q3k2/8/8/8/2B5/K5Pp/1P5P/8 b - - 1 55").unwrap()
+        crate::fen::parse("1Q3k2/8/8/8/2B5/K5Pp/1P5P/8 b - - 0 55").unwrap()
     );
 }
 
