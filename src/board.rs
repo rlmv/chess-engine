@@ -801,10 +801,13 @@ impl Board {
     }
 
     pub fn find_next_move(&self, depth: u8) -> Result<Option<(Move, Score)>> {
-        let (mv, score, path) =
+        let (mv, score, path, node_count) =
             self._find_next_move(depth, &TraversalPath::head(), Score::MIN, Score::MAX)?;
 
-        debug!("Main line score={}, path={:?}", score, path);
+        info!(
+            "Main line score={}, path={:?}, node_count={}",
+            score, path, node_count
+        );
         Ok(mv.map(|m| (m, score)))
     }
 
@@ -814,7 +817,7 @@ impl Board {
         path: &TraversalPath,
         mut alpha: Score,
         mut beta: Score,
-    ) -> Result<(Option<Move>, Score, Vec<Move>)> {
+    ) -> Result<(Option<Move>, Score, Vec<Move>, u64)> {
         // Find all pieces
         // Generate all valid moves for those pieces.
         // After each move, must not be in check - prune.
@@ -822,16 +825,16 @@ impl Board {
         // Pick highest scoring move
 
         if depth == 0 {
-            return Ok((None, self.evaluate_position()?, path.into()));
+            return Ok((None, self.evaluate_position()?, path.into(), 1));
         } else if self.checkmate(self.color_to_move)? {
             debug!("Position is checkmate for {}", self.color_to_move);
 
             return match self.color_to_move {
-                WHITE => Ok((None, Score::checkmate_white(), path.into())),
-                BLACK => Ok((None, Score::checkmate_black(), path.into())),
+                WHITE => Ok((None, Score::checkmate_white(), path.into(), 1)),
+                BLACK => Ok((None, Score::checkmate_black(), path.into(), 1)),
             };
         } else if self.stalemate(self.color_to_move)? {
-            return Ok((None, Score::ZERO, path.into()));
+            return Ok((None, Score::ZERO, path.into(), 1));
         }
 
         let all_moves = self.all_moves(self.color_to_move)?;
@@ -853,6 +856,8 @@ impl Board {
             BLACK => Score::MAX,
         };
         let mut best_path: Vec<Move> = path.into();
+
+        let mut node_count: u64 = 1; // number of nodes visited by all
 
         for mv in all_moves.iter() {
             let moved_board = self.make_move(*mv)?;
@@ -877,8 +882,10 @@ impl Board {
             }
 
             // Evaluate board score at leaf nodes
-            let (_, score, mainline) =
+            let (_, score, mainline, subtree_node_count) =
                 moved_board._find_next_move(depth - 1, &moved_path, alpha, beta)?;
+
+            node_count += subtree_node_count;
 
             // Ensure that only *fully-searched* paths are returned. A pruned path could
             // possibly be worse than the fully searched path. The alpha-beta bound guarantees
@@ -909,17 +916,17 @@ impl Board {
             }
 
             debug!(
-                "{}: Evaluated move {} score={} α={} β={}",
-                self.color_to_move, moved_path, score, alpha, beta
+                "{}: Evaluated move {} score={} α={} β={} nodes={}",
+                self.color_to_move, moved_path, score, alpha, beta, subtree_node_count
             );
 
             if alpha >= beta {
                 debug!("Found α={} >= β={}. Pruning rest of node.", alpha, beta);
-                return Ok((Some(*mv), score, mainline));
+                return Ok((Some(*mv), score, mainline, node_count));
             }
         }
 
-        Ok((best_move, best_score, best_path))
+        Ok((best_move, best_score, best_path, node_count))
     }
 
     /*

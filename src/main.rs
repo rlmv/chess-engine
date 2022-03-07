@@ -10,7 +10,7 @@ use log4rs::append::file::FileAppender;
 use log4rs::config::{Appender, Config, Root};
 use log_panics;
 
-const DEFAULT_DEPTH: u8 = 3;
+const DEFAULT_DEPTH: u8 = 4;
 
 fn main() {
     configure_logging();
@@ -72,7 +72,7 @@ fn configure_logging() -> () {
             Root::builder()
                 //                .appender("stderr")
                 .appender("file")
-                .build(LevelFilter::Info),
+                .build(LevelFilter::Debug),
         )
         .unwrap();
 
