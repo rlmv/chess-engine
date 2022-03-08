@@ -455,7 +455,7 @@ impl Board {
 
         let kings: Vec<&(Piece, Square)> = all_pieces
             .iter()
-            .filter(|(p, _)| p.piece() & PIECE_MASK == KING && p.color() == color)
+            .filter(|(p, _)| p.piece() == KING)
             .collect();
 
         if kings.len() == 0 {
@@ -480,7 +480,7 @@ impl Board {
     fn attacked_by_color(&self, target_square: Square, color: Color) -> Result<bool> {
         for (_, square) in self.all_pieces_of_color(color) {
             if self
-                .possible_moves(square, true)?
+                .candidate_moves(square)?
                 .iter()
                 // Find square the move threatens to capture
                 .filter_map(|mv| match mv {
@@ -502,30 +502,50 @@ impl Board {
         Ok(false)
     }
 
-    fn possible_moves(&self, from: Square, ignore_king_jeopardy: bool) -> Result<Vec<Move>> {
+    // Return all candidate moves for single pieces, allowing illegal moves
+    // (e.g., that move the king into check)
+    fn candidate_moves(&self, from: Square) -> Result<Vec<Move>> {
         // TODO: check color, turn
 
-        match Piece::from(self.board[from.index()]) {
-            None => Err(NoPieceOnFromSquare(from)),
-            Some(p) if p.piece() == PAWN => Ok(self._pawn_moves(from, &p)),
-            Some(p) if p.piece() == KNIGHT => Ok(cross_product(from, self._knight_moves(from, &p))),
-            Some(p) if p.piece() == BISHOP => Ok(cross_product(from, self._bishop_moves(from, &p))),
-            Some(p) if p.piece() == ROOK => Ok(cross_product(from, self._rook_moves(from, &p))),
-            Some(p) if p.piece() == QUEEN => Ok(cross_product(from, self._queen_moves(from, &p))),
-            Some(p) if p.piece() == KING => self
-                ._king_moves(from, &p, ignore_king_jeopardy)
-                .map(|moves| cross_product(from, moves)),
-            _ => Err(NotImplemented),
-        }
+        let target_moves = match Piece::from(self.board[from.index()]) {
+            None => Err(NoPieceOnFromSquare(from))?,
+            Some(p) if p.piece() == PAWN => self._pawn_moves(from, &p),
+            Some(p) if p.piece() == KNIGHT => cross_product(from, self._knight_moves(from, &p)),
+            Some(p) if p.piece() == BISHOP => cross_product(from, self._bishop_moves(from, &p)),
+            Some(p) if p.piece() == ROOK => cross_product(from, self._rook_moves(from, &p)),
+            Some(p) if p.piece() == QUEEN => cross_product(from, self._queen_moves(from, &p)),
+            Some(p) if p.piece() == KING => cross_product(from, self._king_moves(from, &p)),
+            _ => Err(NotImplemented)?,
+        };
+
+        Ok(target_moves)
     }
 
-    // Return all moves possible for the given color, including castling and promotion
+    // Return all legal moves for the given square, filtering out those that result in
+    // illegal states
+    fn legal_moves(&self, from: Square) -> Result<Vec<Move>> {
+        // TODO assert that piece on square is color to move
+
+        let mut moves = Vec::new();
+
+        for mv in self.candidate_moves(from)?.into_iter() {
+            let moved_board = self.make_move(mv)?;
+            // Cannot move into check
+            if !moved_board.is_in_check(self.color_to_move)? {
+                moves.push(mv)
+            }
+        }
+
+        Ok(moves)
+    }
+
+    // Return all legal moves possible for the given color, including castling and promotion
     fn all_moves(&self, color: Color) -> Result<Vec<Move>> {
         let mut moves: Vec<Move> = self
             .all_pieces_of_color(color) // TODO: self.color_to_move?
             .iter()
             .flat_map(move |(_, square)| {
-                self.possible_moves(*square, false)
+                self.legal_moves(*square)
                     .unwrap() // TODO fix this
                     .into_iter()
             })
@@ -653,18 +673,8 @@ impl Board {
             .collect()
     }
 
-    // TODO: this "ignore_king_jeopardy" flag feels hacky. Is there a way to
-    // simplify and avoid this? More efficient way to find all attackers of a
-    // square?
-    //
-    // Maybe don't need to exclude moves into check? Can instead remove those
-    // later with the is_in_check option?
-    fn _king_moves(
-        &self,
-        from: Square,
-        king: &Piece,
-        ignore_king_jeopardy: bool,
-    ) -> Result<Vec<Square>> {
+    // Note: does not exclude moves that put the king in check
+    fn _king_moves(&self, from: Square, king: &Piece) -> Vec<Square> {
         let mut moves: Vec<Square> = Vec::new();
         const MOVE_VECTORS: [MoveVector; 8] = [
             MoveVector(1, 1),
@@ -684,19 +694,12 @@ impl Board {
             if self.is_occupied_by_color(target.index(), king.color()) {
                 // cannot move into square of own piece
                 continue;
-            } else if !ignore_king_jeopardy
-                && self.attacked_by_color(target.index(), king.color().opposite())?
-            {
-                // Cannot move *into* check.
-                // BUT: we don't care if we are testing when the opponents king
-                // moves into check. Don't recurse.
-                continue;
             } else {
                 moves.push(target);
             }
         }
 
-        Ok(moves)
+        moves
     }
 
     fn _rook_moves(&self, from: Square, rook: &Piece) -> Vec<Square> {
@@ -1232,17 +1235,18 @@ fn cross_product(from: Square, to: Vec<Square>) -> Vec<Move> {
 #[test]
 fn test_king_free_movement() {
     init();
+
     let board = Board::empty()
         .place_piece(Piece(KING, BLACK), A1)
         .place_piece(Piece(KING, WHITE), C6);
 
     assert_eq!(
-        sorted(board.possible_moves(A1, false).unwrap()),
+        sorted(board.with_color_to_move(BLACK).legal_moves(A1).unwrap()),
         sorted(cross_product(A1, vec![A2, B2, B1]))
     );
 
     assert_eq!(
-        sorted(board.possible_moves(C6, false).unwrap()),
+        sorted(board.with_color_to_move(WHITE).legal_moves(C6).unwrap()),
         sorted(cross_product(C6, vec![C7, D7, D6, D5, C5, B5, B6, B7]))
     );
 
@@ -1250,7 +1254,8 @@ fn test_king_free_movement() {
         sorted(
             Board::empty()
                 .place_piece(Piece(KING, BLACK), H8)
-                .possible_moves(H8, false)
+                .with_color_to_move(BLACK)
+                .legal_moves(H8)
                 .unwrap()
         ),
         sorted(cross_product(H8, vec![H7, G7, G8]))
@@ -1268,7 +1273,7 @@ fn test_king_obstructed_movement() {
         .place_piece(Piece(PAWN, WHITE), F1);
 
     assert_eq!(
-        sorted(board.possible_moves(F2, false).unwrap()),
+        sorted(board.legal_moves(F2).unwrap()),
         sorted(cross_product(F2, vec![G2, G1, E1, E3]))
     );
 }
@@ -1283,8 +1288,22 @@ fn test_king_cannot_move_into_check() {
         .place_piece(Piece(ROOK, WHITE), C2);
 
     assert_eq!(
-        sorted(board.possible_moves(A1, false).unwrap()),
+        sorted(board.legal_moves(A1).unwrap()),
         sorted(vec![(A1, B1).into()])
+    );
+}
+
+#[test]
+fn test_king_cannot_move_into_check_by_other_king() {
+    init();
+    let board = Board::empty()
+        .with_color_to_move(BLACK)
+        .place_piece(Piece(KING, BLACK), A1)
+        .place_piece(Piece(KING, WHITE), C2);
+
+    assert_eq!(
+        sorted(board.legal_moves(A1).unwrap()),
+        sorted(vec![(A1, A2).into()])
     );
 }
 
@@ -1321,7 +1340,7 @@ fn test_king_can_take_queen_to_escape_check() {
     assert!(board.is_in_check(BLACK).unwrap());
 
     assert!(board
-        .possible_moves(B8, false)
+        .legal_moves(B8)
         .unwrap()
         .iter()
         .find(|&&s| s == (B8, A7).into())
@@ -1656,11 +1675,13 @@ fn test_cannot_castle_kingside_after_moving_h1_rook() {
 #[test]
 fn test_rook_free_movement() {
     let board = Board::empty()
+        .place_piece(Piece(KING, WHITE), D3)
+        .place_piece(Piece(KING, BLACK), H8)
         .place_piece(Piece(ROOK, WHITE), A1)
         .place_piece(Piece(ROOK, WHITE), C6);
 
     assert_eq!(
-        sorted(board.possible_moves(A1, false).unwrap()),
+        sorted(board.legal_moves(A1).unwrap()),
         sorted(cross_product(
             A1,
             vec![
@@ -1671,7 +1692,7 @@ fn test_rook_free_movement() {
     );
 
     assert_eq!(
-        sorted(board.possible_moves(C6, false).unwrap()),
+        sorted(board.legal_moves(C6).unwrap()),
         sorted(cross_product(
             C6,
             vec![
@@ -1685,10 +1706,13 @@ fn test_rook_free_movement() {
 #[test]
 fn test_rook_boundary_conditions() {
     init();
-    let board = Board::empty().place_piece(Piece(ROOK, WHITE), A8);
+    let board = Board::empty()
+        .place_piece(Piece(KING, WHITE), C1)
+        .place_piece(Piece(KING, BLACK), F5)
+        .place_piece(Piece(ROOK, WHITE), A8);
 
     assert_eq!(
-        sorted(board.possible_moves(A8, false).unwrap()),
+        sorted(board.legal_moves(A8).unwrap()),
         sorted(cross_product(
             A8,
             vec![A1, A2, A3, A4, A5, A6, A7, B8, C8, D8, E8, F8, G8, H8]
@@ -1701,13 +1725,14 @@ fn test_rook_obstructed_movement() {
     init();
     let board = Board::empty()
         .place_piece(Piece(ROOK, WHITE), E5)
-        .place_piece(Piece(PAWN, WHITE), E2)
+        .place_piece(Piece(KING, WHITE), E2)
         .place_piece(Piece(PAWN, WHITE), E6)
         .place_piece(Piece(PAWN, WHITE), A5)
-        .place_piece(Piece(PAWN, WHITE), G5);
+        .place_piece(Piece(PAWN, WHITE), G5)
+        .place_piece(Piece(KING, BLACK), H8);
 
     assert_eq!(
-        sorted(board.possible_moves(E5, false).unwrap()),
+        sorted(board.legal_moves(E5).unwrap()),
         sorted(cross_product(
             E5,
             vec![
@@ -1722,6 +1747,8 @@ fn test_rook_obstructed_movement() {
 fn test_rook_capture() {
     init();
     let board = Board::empty()
+        .place_piece(Piece(KING, WHITE), A1)
+        .place_piece(Piece(KING, BLACK), H8)
         .place_piece(Piece(ROOK, WHITE), E5)
         .place_piece(Piece(PAWN, BLACK), E2)
         .place_piece(Piece(PAWN, BLACK), E6)
@@ -1729,7 +1756,7 @@ fn test_rook_capture() {
         .place_piece(Piece(PAWN, BLACK), G5);
 
     assert_eq!(
-        sorted(board.possible_moves(E5, false).unwrap()),
+        sorted(board.legal_moves(E5).unwrap()),
         sorted(cross_product(
             E5,
             vec![
@@ -2050,10 +2077,13 @@ fn test_puzzle_grab_debug() {
 #[test]
 fn test_pawn_movement_from_start_rank_white() {
     init();
-    let board = Board::empty().place_piece(Piece(PAWN, WHITE), A2);
+    let board = Board::empty()
+        .place_piece(Piece(PAWN, WHITE), A2)
+        .place_piece(Piece(KING, WHITE), C1)
+        .place_piece(Piece(KING, BLACK), H8);
 
     assert_eq!(
-        sorted(board.possible_moves(A2, false).unwrap()),
+        sorted(board.legal_moves(A2).unwrap()),
         sorted(cross_product(A2, vec![A3, A4,]))
     );
 }
@@ -2061,10 +2091,14 @@ fn test_pawn_movement_from_start_rank_white() {
 #[test]
 fn test_pawn_movement_from_start_rank_black() {
     init();
-    let board = Board::empty().place_piece(Piece(PAWN, BLACK), C7);
+    let board = Board::empty()
+        .with_color_to_move(BLACK)
+        .place_piece(Piece(PAWN, BLACK), C7)
+        .place_piece(Piece(KING, WHITE), A1)
+        .place_piece(Piece(KING, BLACK), H8);
 
     assert_eq!(
-        sorted(board.possible_moves(C7, false).unwrap()),
+        sorted(board.legal_moves(C7).unwrap()),
         sorted(cross_product(C7, vec![C6, C5,]))
     );
 }
@@ -2073,22 +2107,21 @@ fn test_pawn_movement_from_start_rank_black() {
 fn test_pawn_movement_blocked_from_start_rank_white() {
     init();
     let board1 = Board::empty()
+        .place_piece(Piece(KING, WHITE), H8)
         .place_piece(Piece(PAWN, WHITE), A2)
-        .place_piece(Piece(ROOK, BLACK), A4);
+        .place_piece(Piece(KING, BLACK), A4);
 
     assert_eq!(
-        sorted(board1.possible_moves(A2, false).unwrap()),
+        sorted(board1.legal_moves(A2).unwrap()),
         sorted(vec![(A2, A3).into()])
     );
 
     let board2 = Board::empty()
         .place_piece(Piece(PAWN, WHITE), A2)
-        .place_piece(Piece(ROOK, BLACK), A3);
+        .place_piece(Piece(KING, BLACK), A3)
+        .place_piece(Piece(KING, WHITE), H8);
 
-    assert_eq!(
-        sorted(board2.possible_moves(A2, false).unwrap()),
-        Vec::new()
-    );
+    assert_eq!(sorted(board2.legal_moves(A2).unwrap()), Vec::new());
 }
 
 #[test]
@@ -2097,31 +2130,33 @@ fn test_pawn_movement_blocked_from_start_rank_black() {
     let board1 = Board::empty()
         .with_color_to_move(BLACK)
         .place_piece(Piece(PAWN, BLACK), A7)
-        .place_piece(Piece(ROOK, WHITE), A5);
+        .place_piece(Piece(KING, WHITE), A5)
+        .place_piece(Piece(KING, BLACK), F6);
 
     assert_eq!(
-        sorted(board1.possible_moves(A7, false).unwrap()),
+        sorted(board1.legal_moves(A7).unwrap()),
         sorted(vec![(A7, A6).into()])
     );
 
     let board2 = Board::empty()
         .with_color_to_move(BLACK)
         .place_piece(Piece(PAWN, BLACK), A7)
-        .place_piece(Piece(ROOK, WHITE), A6);
+        .place_piece(Piece(KING, WHITE), A6)
+        .place_piece(Piece(KING, BLACK), C4);
 
-    assert_eq!(
-        sorted(board2.possible_moves(A7, false).unwrap()),
-        Vec::new()
-    );
+    assert_eq!(sorted(board2.legal_moves(A7).unwrap()), Vec::new());
 }
 
 #[test]
 fn test_pawn_movement_from_middle_board_white() {
     init();
-    let board = Board::empty().place_piece(Piece(PAWN, WHITE), H3);
+    let board = Board::empty()
+        .place_piece(Piece(PAWN, WHITE), H3)
+        .place_piece(Piece(KING, WHITE), A1)
+        .place_piece(Piece(KING, BLACK), H8);
 
     assert_eq!(
-        sorted(board.possible_moves(H3, false).unwrap()),
+        sorted(board.legal_moves(H3).unwrap()),
         sorted(vec![(H3, H4).into()])
     );
 }
@@ -2131,10 +2166,12 @@ fn test_pawn_movement_from_middle_board_black() {
     init();
     let board = Board::empty()
         .with_color_to_move(BLACK)
-        .place_piece(Piece(PAWN, BLACK), D4);
+        .place_piece(Piece(PAWN, BLACK), D4)
+        .place_piece(Piece(KING, WHITE), A1)
+        .place_piece(Piece(KING, BLACK), H8);
 
     assert_eq!(
-        sorted(board.possible_moves(D4, false).unwrap()),
+        sorted(board.legal_moves(D4).unwrap()),
         sorted(vec![(D4, D3).into()])
     );
 }
@@ -2143,12 +2180,14 @@ fn test_pawn_movement_from_middle_board_black() {
 fn test_pawn_capture_white() {
     init();
     let board = Board::empty()
+        .place_piece(Piece(KING, WHITE), A1)
+        .place_piece(Piece(KING, BLACK), H8)
         .place_piece(Piece(PAWN, WHITE), F6)
         .place_piece(Piece(ROOK, BLACK), E7)
         .place_piece(Piece(ROOK, BLACK), G7);
 
     assert_eq!(
-        sorted(board.possible_moves(F6, false).unwrap()),
+        sorted(board.legal_moves(F6).unwrap()),
         sorted(cross_product(F6, vec![E7, F7, G7]))
     );
 }
@@ -2158,12 +2197,14 @@ fn test_pawn_capture_black() {
     init();
     let board = Board::empty()
         .with_color_to_move(BLACK)
+        .place_piece(Piece(KING, WHITE), A1)
+        .place_piece(Piece(KING, BLACK), H8)
         .place_piece(Piece(PAWN, BLACK), C4)
         .place_piece(Piece(ROOK, WHITE), B3)
         .place_piece(Piece(ROOK, WHITE), D3);
 
     assert_eq!(
-        sorted(board.possible_moves(C4, false).unwrap()),
+        sorted(board.legal_moves(C4).unwrap()),
         sorted(cross_product(C4, vec![B3, C3, D3]))
     );
 }
@@ -2172,12 +2213,14 @@ fn test_pawn_capture_black() {
 fn test_pawn_cannot_capture_own_pieces_white() {
     init();
     let board = Board::empty()
+        .place_piece(Piece(KING, WHITE), A1)
+        .place_piece(Piece(KING, BLACK), H8)
         .place_piece(Piece(PAWN, WHITE), F6)
         .place_piece(Piece(ROOK, WHITE), E7)
         .place_piece(Piece(ROOK, WHITE), G7);
 
     assert_eq!(
-        sorted(board.possible_moves(F6, false).unwrap()),
+        sorted(board.legal_moves(F6).unwrap()),
         sorted(vec![(F6, F7).into()])
     );
 }
@@ -2187,12 +2230,14 @@ fn test_pawn_cannot_capture_own_pieces_black() {
     init();
     let board = Board::empty()
         .with_color_to_move(BLACK)
+        .place_piece(Piece(KING, WHITE), A1)
+        .place_piece(Piece(KING, BLACK), H8)
         .place_piece(Piece(PAWN, BLACK), C4)
         .place_piece(Piece(ROOK, BLACK), B3)
         .place_piece(Piece(ROOK, BLACK), D3);
 
     assert_eq!(
-        sorted(board.possible_moves(C4, false).unwrap()),
+        sorted(board.legal_moves(C4).unwrap()),
         sorted(vec![(C4, C3).into()])
     );
 }
@@ -2202,18 +2247,20 @@ fn test_pawn_cannot_capture_around_edge_of_board() {
     init();
     let board = Board::empty()
         .with_color_to_move(WHITE)
+        .place_piece(Piece(KING, WHITE), C3)
+        .place_piece(Piece(KING, BLACK), E4)
         .place_piece(Piece(PAWN, WHITE), A6)
         .place_piece(Piece(ROOK, BLACK), H8)
         .place_piece(Piece(PAWN, WHITE), H3)
         .place_piece(Piece(ROOK, BLACK), A5);
 
     assert_eq!(
-        sorted(board.possible_moves(A6, false).unwrap()),
+        sorted(board.legal_moves(A6).unwrap()),
         sorted(vec![(A6, A7).into()])
     );
 
     assert_eq!(
-        sorted(board.possible_moves(H3, false).unwrap()),
+        sorted(board.legal_moves(H3).unwrap()),
         sorted(vec![(H3, H4).into()])
     );
 }
@@ -2225,7 +2272,7 @@ fn test_pawn_promote_to_queen() {
     let board = crate::fen::parse("5k2/1P6/8/8/2B5/K5Pp/1P5P/8 w - - 1 55").unwrap();
 
     assert_eq!(
-        sorted(board.possible_moves(B7, false).unwrap()),
+        sorted(board.legal_moves(B7).unwrap()),
         sorted(vec![
             Move::Promote {
                 from: B7,
@@ -2280,7 +2327,7 @@ fn test_pawn_promote_to_queen() {
 // 	.move_piece(D7, D5).unwrap(); // set up en passant target
 
 //     assert_eq!(
-//         sorted(board.possible_moves(E5, false).unwrap()),
+//         sorted(board.legal_moves(E5).unwrap()),
 //         sorted(vec![E6, D6])
 //     );
 // }
@@ -2290,10 +2337,12 @@ fn test_knight_moves() {
     init();
     let board = Board::empty()
         .with_color_to_move(BLACK)
+        .place_piece(Piece(KING, WHITE), A1)
+        .place_piece(Piece(KING, BLACK), H8)
         .place_piece(Piece(KNIGHT, BLACK), D4);
 
     assert_eq!(
-        sorted(board.possible_moves(D4, false).unwrap()),
+        sorted(board.legal_moves(D4).unwrap()),
         sorted(cross_product(D4, vec![E6, F5, F3, E2, C2, B3, B5, C6,]))
     );
 }
@@ -2303,10 +2352,12 @@ fn test_bishop_moves() {
     init();
     let board = Board::empty()
         .with_color_to_move(WHITE)
+        .place_piece(Piece(KING, WHITE), A1)
+        .place_piece(Piece(KING, BLACK), H8)
         .place_piece(Piece(BISHOP, WHITE), C5);
 
     assert_eq!(
-        sorted(board.possible_moves(C5, false).unwrap()),
+        sorted(board.legal_moves(C5).unwrap()),
         sorted(cross_product(
             C5,
             vec![
@@ -2322,10 +2373,12 @@ fn test_queen_moves() {
     init();
     let board = Board::empty()
         .with_color_to_move(WHITE)
+        .place_piece(Piece(KING, WHITE), A1)
+        .place_piece(Piece(KING, BLACK), H8)
         .place_piece(Piece(QUEEN, WHITE), C5);
 
     assert_eq!(
-        sorted(board.possible_moves(C5, false).unwrap()),
+        sorted(board.legal_moves(C5).unwrap()),
         sorted(cross_product(
             C5,
             vec![
@@ -2410,12 +2463,12 @@ fn test_en_passant_capture_white() {
             .unwrap();
 
     assert!(board
-        .possible_moves(G5, false)
+        .legal_moves(G5)
         .unwrap()
         .contains(&Move::Single { from: G5, to: F6 }));
 
     assert!(board
-        .possible_moves(E5, false)
+        .legal_moves(E5)
         .unwrap()
         .contains(&Move::Single { from: E5, to: F6 }));
 
@@ -2432,12 +2485,12 @@ fn test_en_passant_capture_black() {
         crate::fen::parse("rnbqkbnr/1p1ppppp/8/8/pPp2PPP/8/P1PPP3/RNBQKBNR b KQkq b3 0 5").unwrap();
 
     assert!(board
-        .possible_moves(A4, false)
+        .legal_moves(A4)
         .unwrap()
         .contains(&Move::Single { from: A4, to: B3 }));
 
     assert!(board
-        .possible_moves(C4, false)
+        .legal_moves(C4)
         .unwrap()
         .contains(&Move::Single { from: C4, to: B3 }));
 
