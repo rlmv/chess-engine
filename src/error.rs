@@ -4,7 +4,7 @@ use crate::square::Square;
 
 use BoardError::*;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum BoardError {
     NoPieceOnFromSquare(Square),
     NotImplemented,

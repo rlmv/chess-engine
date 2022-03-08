@@ -1,7 +1,7 @@
 use crate::constants::*;
 use std::fmt;
 
-#[derive(Debug, Eq, PartialEq, Clone, Copy)]
+#[derive(Debug, Eq, PartialEq, Clone, Copy, Hash)]
 pub enum Rank {
     _1,
     _2,

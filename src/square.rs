@@ -11,7 +11,7 @@ use crate::rank::*;
 
 type Result<T> = std::result::Result<T, BoardError>;
 
-#[derive(Debug, Eq, PartialEq, Clone, Copy)]
+#[derive(Debug, Eq, PartialEq, Clone, Copy, Hash)]
 pub struct Square(File, Rank);
 
 impl Square {

@@ -2,7 +2,7 @@ use std::fmt;
 
 use crate::constants::*;
 
-#[derive(Debug, Eq, PartialEq, Clone, Copy)]
+#[derive(Debug, Eq, PartialEq, Clone, Copy, Hash)]
 pub enum File {
     A,
     B,

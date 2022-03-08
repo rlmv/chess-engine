@@ -1,5 +1,6 @@
 use core::cmp::Ordering;
 use log::{debug, info};
+use lru::LruCache;
 use std::cmp;
 use std::fmt;
 
@@ -11,13 +12,20 @@ use crate::file::*;
 use crate::rank::*;
 use crate::square::*;
 use crate::vector::*;
-
+use cached::proc_macro::cached;
 pub type Result<T> = std::result::Result<T, BoardError>;
 
 /*
  * TODO:
  * - ingest lichess puzzles in a test suite
  */
+
+thread_local!(static move_cache: LruCache<Board, Vec<Move>> = LruCache::new(256));
+
+#[cached]
+fn cached_all_moves(board: Board, color: Color) -> Result<Vec<Move>> {
+    board.all_moves(color)
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Copy)]
 pub struct Piece(pub u8, pub Color);
@@ -81,7 +89,7 @@ pub enum PieceEnum {
 
 const PIECE_MASK: u8 = 0b00000111;
 
-#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
 pub struct CastleRights {
     pub kingside_black: bool,
     pub queenside_black: bool,
@@ -109,7 +117,7 @@ impl CastleRights {
     }
 }
 
-#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
 pub struct Board {
     board: [u8; 64],
     pub color_to_move: Color,
@@ -477,6 +485,7 @@ impl Board {
     }
 
     // attacking moves is a subset of other moves -
+
     fn attacked_by_color(&self, target_square: Square, color: Color) -> Result<bool> {
         for (_, square) in self.all_pieces_of_color(color) {
             if self
@@ -541,6 +550,10 @@ impl Board {
 
     // Return all legal moves possible for the given color, including castling and promotion
     fn all_moves(&self, color: Color) -> Result<Vec<Move>> {
+        // if let Some(cached_moves) = move_cache.with(|mut c| c.get(self).clone()) {
+        //     return Ok(*cached_moves);
+        // }
+
         let mut moves: Vec<Move> = self
             .all_pieces_of_color(color) // TODO: self.color_to_move?
             .iter()
@@ -559,10 +572,11 @@ impl Board {
             moves.push(Move::CastleQueenside)
         };
 
+        //        move_cache.with(|c| c.put(*self, moves.clone()));
+
         Ok(moves)
     }
 
-    //
     fn plus_vector(s: &Square, v: &MoveVector) -> Option<Square> {
         let signed_index = s.index() as i8;
 
@@ -815,8 +829,8 @@ impl Board {
         &self,
         depth: u8,
         path: &TraversalPath,
-        mut alpha: Score,
-        mut beta: Score,
+        alpha_arg: Score,
+        beta_arg: Score,
     ) -> Result<(Option<Move>, Score, Vec<Move>, u64)> {
         // Find all pieces
         // Generate all valid moves for those pieces.
@@ -824,20 +838,15 @@ impl Board {
         // Make each move - evaluate the position.
         // Pick highest scoring move
 
+        let mut alpha = alpha_arg;
+        let mut beta = beta_arg;
+
+        // Leaf node, we are done
         if depth == 0 {
             return Ok((None, self.evaluate_position()?, path.into(), 1));
-        } else if self.checkmate(self.color_to_move)? {
-            debug!("Position is checkmate for {}", self.color_to_move);
-
-            return match self.color_to_move {
-                WHITE => Ok((None, Score::checkmate_white(), path.into(), 1)),
-                BLACK => Ok((None, Score::checkmate_black(), path.into(), 1)),
-            };
-        } else if self.stalemate(self.color_to_move)? {
-            return Ok((None, Score::ZERO, path.into(), 1));
         }
 
-        let all_moves = self.all_moves(self.color_to_move)?;
+        let all_moves = cached_all_moves(*self, self.color_to_move)?;
 
         debug!(
             "{}: {}: All moves for position: {}",
@@ -849,6 +858,20 @@ impl Board {
                 .collect::<Vec<String>>()
                 .join(", ")
         );
+
+        // No legal moves, this position is either checkmate or stalemate
+        if all_moves.len() == 0 {
+            if self.is_in_check(self.color_to_move)? {
+                debug!("Position is checkmate for {}", self.color_to_move);
+                return match self.color_to_move {
+                    WHITE => Ok((None, Score::checkmate_white(), path.into(), 1)),
+                    BLACK => Ok((None, Score::checkmate_black(), path.into(), 1)),
+                };
+            } else {
+                debug!("Position is stalemate");
+                return Ok((None, Score::ZERO, path.into(), 1));
+            }
+        }
 
         let mut best_move: Option<Move> = None;
         let mut best_score = match self.color_to_move {
@@ -941,6 +964,9 @@ impl Board {
         } else if self.checkmate(WHITE)? {
             info!("Found checkmate of {}", WHITE);
             return Ok(Score::checkmate_white());
+        } else if self.stalemate(self.color_to_move)? {
+            info!("Found stalemate");
+            return Ok(Score::ZERO);
         }
 
         let white_value: i32 = self
@@ -965,7 +991,7 @@ impl Board {
 
         debug!("{}: In check. Evaluating for checkmate", color);
 
-        for mv in self.all_moves(color)?.iter() {
+        for mv in cached_all_moves(*self, color)?.iter() {
             let moved_board = self.make_move(*mv)?;
 
             // At least one way out!
@@ -986,7 +1012,7 @@ impl Board {
 
         debug!("{}: Evaluating for stalemate", color);
 
-        for mv in self.all_moves(color)?.iter() {
+        for mv in cached_all_moves(*self, color)?.iter() {
             let moved_board = self.make_move(*mv)?;
 
             // At least one move that avoids check
@@ -2499,4 +2525,29 @@ fn test_en_passant_capture_black() {
     assert!(captured_board.is_empty(A4.index())); // capturing pawn has moved
     assert!(captured_board.is_empty(B4.index())); // captured pawn is gone
     assert!(captured_board.piece_on_square(B3) == Some(Piece(PAWN, BLACK))); // capturer moved to en passant target
+}
+
+#[test]
+
+fn test_foo() {
+    let board =
+        crate::fen::parse("rnbqkbnr/1p1ppppp/8/8/pPp2PPP/8/P1PPP3/RNBQKBNR b KQkq b3 0 5").unwrap();
+
+    let color = Color::WHITE;
+
+    let mut v1: Vec<Square> = vec![];
+
+    for (i, _) in board.board.iter().enumerate() {
+        if board.is_occupied_by_color(i, color) {
+            v1.push(Square::from_index(i));
+        }
+    }
+
+    let v2: Vec<Square> = board
+        .all_pieces_of_color(color)
+        .iter()
+        .map(|(_, square)| *square)
+        .collect();
+
+    assert_eq!(v1, v2);
 }
