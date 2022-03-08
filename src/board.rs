@@ -299,17 +299,17 @@ impl Board {
                 self.can_castle.kingside_white
                     && self.is_empty(F1.index())
                     && self.is_empty(G1.index())
-                    && !self.attacked_by_color(E1.index(), color.opposite())?
-                    && !self.attacked_by_color(F1.index(), color.opposite())?
-                    && !self.attacked_by_color(G1.index(), color.opposite())?
+                    && !self.attacked_by_color(E1, color.opposite())?
+                    && !self.attacked_by_color(F1, color.opposite())?
+                    && !self.attacked_by_color(G1, color.opposite())?
             }
             Color::BLACK => {
                 self.can_castle.kingside_black
                     && self.is_empty(F8.index())
                     && self.is_empty(G8.index())
-                    && !self.attacked_by_color(E8.index(), color.opposite())?
-                    && !self.attacked_by_color(F8.index(), color.opposite())?
-                    && !self.attacked_by_color(G8.index(), color.opposite())?
+                    && !self.attacked_by_color(E8, color.opposite())?
+                    && !self.attacked_by_color(F8, color.opposite())?
+                    && !self.attacked_by_color(G8, color.opposite())?
             }
         };
 
@@ -323,18 +323,18 @@ impl Board {
                     && self.is_empty(B1.index())
                     && self.is_empty(C1.index())
                     && self.is_empty(D1.index())
-                    && !self.attacked_by_color(C1.index(), color.opposite())?
-                    && !self.attacked_by_color(D1.index(), color.opposite())?
-                    && !self.attacked_by_color(E1.index(), color.opposite())?
+                    && !self.attacked_by_color(C1, color.opposite())?
+                    && !self.attacked_by_color(D1, color.opposite())?
+                    && !self.attacked_by_color(E1, color.opposite())?
             }
             Color::BLACK => {
                 self.can_castle.queenside_black
                     && self.is_empty(B8.index())
                     && self.is_empty(C8.index())
                     && self.is_empty(D8.index())
-                    && !self.attacked_by_color(C8.index(), color.opposite())?
-                    && !self.attacked_by_color(D8.index(), color.opposite())?
-                    && !self.attacked_by_color(E8.index(), color.opposite())?
+                    && !self.attacked_by_color(C8, color.opposite())?
+                    && !self.attacked_by_color(D8, color.opposite())?
+                    && !self.attacked_by_color(E8, color.opposite())?
             }
         };
 
@@ -473,29 +473,28 @@ impl Board {
 
         let (king, king_square) = &kings[0];
 
-        self.attacked_by_color(king_square.index(), king.color().opposite())
+        self.attacked_by_color(*king_square, king.color().opposite())
     }
 
     // attacking moves is a subset of other moves -
-    fn attacked_by_color(&self, square: usize, color: Color) -> Result<bool> {
-        for (i, _) in self.board.iter().enumerate() {
-            if self.is_occupied_by_color(i, color)
-                && self
-                    .possible_moves(Square::from_index(i), true)?
-                    .iter()
-                    // Find square the move threatens to capture
-                    .filter_map(|mv| match mv {
-                        Move::Single { from: _, to } => Some(to),
-                        Move::Promote {
-                            from: _,
-                            to,
-                            piece: _,
-                        } => Some(to),
-                        Move::CastleKingside => None,
-                        Move::CastleQueenside => None,
-                    })
-                    .find(|captures_square| *captures_square == &Square::from_index(square))
-                    .is_some()
+    fn attacked_by_color(&self, target_square: Square, color: Color) -> Result<bool> {
+        for (_, square) in self.all_pieces_of_color(color) {
+            if self
+                .possible_moves(square, true)?
+                .iter()
+                // Find square the move threatens to capture
+                .filter_map(|mv| match mv {
+                    Move::Single { from: _, to } => Some(to),
+                    Move::Promote {
+                        from: _,
+                        to,
+                        piece: _,
+                    } => Some(to),
+                    Move::CastleKingside => None,
+                    Move::CastleQueenside => None,
+                })
+                .find(|captures_square| *captures_square == &target_square)
+                .is_some()
             {
                 return Ok(true);
             }
@@ -696,8 +695,6 @@ impl Board {
                 moves.push(target);
             }
         }
-
-        // TODO: castle
 
         Ok(moves)
     }
@@ -1280,7 +1277,9 @@ fn test_king_obstructed_movement() {
 fn test_king_cannot_move_into_check() {
     init();
     let board = Board::empty()
+        .with_color_to_move(BLACK)
         .place_piece(Piece(KING, BLACK), A1)
+        .place_piece(Piece(KING, WHITE), H8)
         .place_piece(Piece(ROOK, WHITE), C2);
 
     assert_eq!(
