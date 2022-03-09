@@ -520,7 +520,9 @@ impl Board {
         let target_moves = match Piece::from(self.board[from.index()]) {
             None => Err(NoPieceOnFromSquare(from))?,
             Some(p) if p.piece() == PAWN => self._pawn_moves(from, &p),
-            Some(p) if p.piece() == KNIGHT => cross_product(from, self._knight_moves(from, &p)),
+            Some(p) if p.piece() == KNIGHT => {
+                cross_product(from, self._knight_moves(from, &p).collect())
+            }
             Some(p) if p.piece() == BISHOP => cross_product(from, self._bishop_moves(from, &p)),
             Some(p) if p.piece() == ROOK => cross_product(from, self._rook_moves(from, &p)),
             Some(p) if p.piece() == QUEEN => cross_product(from, self._queen_moves(from, &p)),
@@ -746,7 +748,11 @@ impl Board {
         moves
     }
 
-    fn _knight_moves(&self, from: Square, knight: &Piece) -> Vec<Square> {
+    fn _knight_moves<'a>(
+        &'a self,
+        from: Square,
+        knight: &'a Piece,
+    ) -> impl Iterator<Item = Square> + 'a {
         const MOVE_VECTORS: [MoveVector; 8] = [
             MoveVector(1, 2),
             MoveVector(2, 1),
@@ -760,9 +766,8 @@ impl Board {
 
         MOVE_VECTORS
             .iter()
-            .filter_map(|v| Board::plus_vector(&from, v))
+            .filter_map(move |v| Board::plus_vector(&from, v))
             .filter(|target| !self.is_occupied_by_color(target.index(), knight.color()))
-            .collect()
     }
 
     fn _bishop_moves(&self, from: Square, bishop: &Piece) -> Vec<Square> {
