@@ -9,6 +9,7 @@ use crate::constants::*;
 use crate::error::BoardError;
 use crate::error::BoardError::*;
 use crate::file::*;
+use crate::mv::*;
 use crate::rank::*;
 use crate::square::*;
 use crate::vector::*;
@@ -1053,7 +1054,7 @@ impl fmt::Display for Board {
     }
 }
 
-fn square_symbol(p: &Piece) -> char {
+pub fn square_symbol(p: &Piece) -> char {
     let Piece(piece, color) = *p;
 
     let uncolored = match piece & PIECE_MASK {
@@ -1116,77 +1117,6 @@ impl fmt::Display for TraversalPath<'_> {
         });
 
         write!(f, "{}", s)
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Move {
-    CastleKingside,
-    CastleQueenside,
-    Single {
-        from: Square,
-        to: Square,
-    },
-    Promote {
-        from: Square,
-        to: Square,
-        piece: Piece,
-    },
-}
-
-impl Move {
-    pub fn new(from: Square, to: Square) -> Self {
-        Move::Single { from: from, to: to }
-    }
-}
-
-impl From<(Square, Square)> for Move {
-    fn from((from, to): (Square, Square)) -> Self {
-        Move::Single { from, to }
-    }
-}
-
-// impl PartialOrd for Move {
-//     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-//         Some(self.cmp(other))
-//     }
-// }
-
-// impl Ord for Move {
-//     fn cmp(&self, other: &Self) -> Ordering {
-//         match (*self, *other) {
-//             (Move::CastleKingside, Move::CastleKingside) => Ordering::Equal,
-//             (Move::CastleKingside, _) => Ordering::Greater,
-//             (Move::CastleQueenside, Move::CastleKingside) => Ordering::Less,
-//             (Move::CastleQueenside, Move::CastleQueenside) => Ordering::Equal,
-//             (Move::CastleQueenside, _) => Ordering::Greater,
-//             (
-//                 Move::Single {
-//                     from: from1,
-//                     to: to1,
-//                 },
-//                 Move::Single {
-//                     from: from2,
-//                     to: to2,
-//                 },
-//             ) => (from1, to1).cmp(&(from2, to2)),
-
-//             (_, Move::CastleKingside) => Ordering::Less,
-//             (_, Move::CastleQueenside) => Ordering::Less,
-//         }
-//     }
-// }
-
-impl fmt::Display for Move {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Move::Single { from, to } => write!(f, "{}{}", from, to),
-            Move::Promote { from, to, piece } => {
-                write!(f, "{}{}{}", from, to, square_symbol(piece))
-            }
-            Move::CastleKingside => write!(f, "0-0"),
-            Move::CastleQueenside => write!(f, "0-0-0"),
-        }
     }
 }
 

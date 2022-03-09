@@ -2,6 +2,7 @@ use crate::board::*;
 use crate::color::Color;
 use crate::error::BoardError;
 use crate::fen;
+use crate::mv::*;
 use crate::square::*;
 use log::info;
 use std::fmt;

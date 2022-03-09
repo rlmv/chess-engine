@@ -4,6 +4,7 @@ pub mod constants;
 pub mod error;
 pub mod fen;
 pub mod file;
+pub mod mv;
 pub mod rank;
 pub mod square;
 pub mod uci;
