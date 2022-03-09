@@ -1,4 +1,4 @@
-use crate::board::{square_symbol, Board, Piece};
+use crate::board::{square_symbol, Piece};
 use crate::square::*;
 use std::fmt;
 

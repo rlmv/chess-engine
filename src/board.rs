@@ -1,6 +1,5 @@
 use core::cmp::Ordering;
 use log::{debug, info};
-use lru::LruCache;
 use std::cmp;
 use std::fmt;
 
@@ -862,7 +861,7 @@ impl Board {
 
         // Leaf node, we are done
         if depth == 0 {
-            return Ok((None, self.evaluate_position()?, path.into(), 1));
+            return Ok((None, self.evaluate_position(path)?, path.into(), 1));
         }
 
         let all_moves = cached_all_moves(*self, self.color_to_move)?;
@@ -976,7 +975,7 @@ impl Board {
      *
      * Positive values favor white, negative favor black.
      */
-    fn evaluate_position(&self) -> Result<Score> {
+    fn evaluate_position(&self, path: &TraversalPath) -> Result<Score> {
         if self.checkmate(BLACK)? {
             debug!("Found checkmate of {}", BLACK);
             return Ok(Score::checkmate_black());
@@ -998,7 +997,30 @@ impl Board {
             .map(|(p, _)| p.value())
             .sum();
 
-        Ok(Score(white_value - black_value))
+        let mut white_bonus: i32 = 0;
+        let mut black_bonus: i32 = 0;
+
+        const off_initial_square: i32 = 50;
+
+        const white_initial_squares: [(Square, u8); 4] =
+            [(B1, KNIGHT), (C1, BISHOP), (F1, BISHOP), (G1, KNIGHT)];
+
+        for (square, piece) in white_initial_squares.into_iter() {
+            if self.piece_on_square(square) != Some(Piece(piece, WHITE)) {
+                white_bonus += off_initial_square;
+            }
+        }
+
+        const black_initial_squares: [(Square, u8); 4] =
+            [(B8, KNIGHT), (C8, BISHOP), (F8, BISHOP), (G8, KNIGHT)];
+
+        for (square, piece) in black_initial_squares.into_iter() {
+            if self.piece_on_square(square) != Some(Piece(piece, BLACK)) {
+                black_bonus += off_initial_square;
+            }
+        }
+
+        Ok(Score(white_value - black_value + white_bonus - black_bonus))
     }
 
     fn checkmate(&self, color: Color) -> Result<bool> {
