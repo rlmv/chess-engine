@@ -568,6 +568,17 @@ impl Board {
 
         //        move_cache.with(|c| c.put(*self, moves.clone()));
 
+        moves.sort_by_cached_key(|mv| match mv {
+            Move::Promote {
+                from: _,
+                to: _,
+                piece: _,
+            } => 1,
+            Move::Single { from: _, to: _ } if self.is_capture(*mv).unwrap() => 2,
+            Move::CastleKingside => 3,
+            Move::CastleQueenside => 3,
+            Move::Single { from: _, to: _ } => 4,
+        });
         Ok(moves)
     }
 
@@ -957,10 +968,10 @@ impl Board {
             debug!("Found checkmate of {}", BLACK);
             return Ok(Score::checkmate_black());
         } else if self.checkmate(WHITE)? {
-            info!("Found checkmate of {}", WHITE);
+            debug!("Found checkmate of {}", WHITE);
             return Ok(Score::checkmate_white());
         } else if self.stalemate(self.color_to_move)? {
-            info!("Found stalemate");
+            debug!("Found stalemate");
             return Ok(Score::ZERO);
         }
 
