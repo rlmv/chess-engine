@@ -1,3 +1,4 @@
+use chess_engine::error::BoardError;
 use chess_engine::fen;
 use chess_engine::uci;
 
@@ -13,12 +14,13 @@ use log_panics;
 const DEFAULT_DEPTH: u8 = 4;
 
 fn main() {
-    configure_logging();
+    match configure_logging() {
+        Ok(_) => (),
+        Err(e) => panic!("{}", e),
+    };
 
     let args: Vec<String> = env::args().collect();
     let mut args_iter = args.iter();
-
-    //    println!("Arguments: {:?}", args);
 
     let _ = args_iter.next(); // Drop binary name
 
@@ -56,13 +58,13 @@ enum Command {
     FEN,
 }
 
-fn configure_logging() -> () {
+fn configure_logging() -> Result<(), BoardError> {
     log_panics::init();
 
     let log_level = match env::var("LOG_LEVEL") {
         Ok(l) if l == "DEBUG" => LevelFilter::Debug,
         Ok(l) if l == "INFO" => LevelFilter::Info,
-        Ok(l) => panic!("Unknown LOG_LEVEL: {}", l),
+        Ok(l) => Err(BoardError::ConfigError(format!("Unknown LOG_LEVEL: {}", l)))?,
         Err(_) => LevelFilter::Info,
     };
 
@@ -70,7 +72,7 @@ fn configure_logging() -> () {
 
     let file = FileAppender::builder()
         .build("/home/bo/Code/chess-engine/out.log")
-        .unwrap();
+        .map_err(|e| BoardError::ConfigError(e.to_string()))?;
 
     let stderr = ConsoleAppender::builder().target(Target::Stderr).build();
 
@@ -86,9 +88,13 @@ fn configure_logging() -> () {
         root_builder = root_builder.appender("stderr");
     }
 
-    let config = config_builder.build(root_builder.build(log_level)).unwrap();
+    let config = config_builder
+        .build(root_builder.build(log_level))
+        .map_err(|e| BoardError::ConfigError(e.to_string()))?;
 
-    log4rs::init_config(config).unwrap();
+    log4rs::init_config(config).map_err(|e| BoardError::ConfigError(e.to_string()))?;
+
+    Ok(())
 }
 
 fn evaluate_fen(fen: &String, depth: u8) -> () {
