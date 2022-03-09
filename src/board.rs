@@ -621,7 +621,7 @@ impl Board {
     }
 
     fn _pawn_moves(&self, from: Square, pawn: &Piece) -> Vec<Move> {
-        let mut moves: Vec<Square> = Vec::new();
+        let mut moves: Vec<Move> = Vec::new();
 
         assert!(*from.rank() != Rank::_1);
         assert!(*from.rank() != Rank::_8);
@@ -639,6 +639,24 @@ impl Board {
             ),
         };
 
+        fn promoting_moves(
+            from: Square,
+            target: Square,
+            color: Color,
+        ) -> impl Iterator<Item = Move> {
+            [QUEEN, ROOK, BISHOP, KNIGHT]
+                .into_iter()
+                .map(move |new_piece| Move::Promote {
+                    from: from,
+                    to: target,
+                    piece: Piece(new_piece, color),
+                })
+        }
+
+        fn is_promoting_square(target: &Square) -> bool {
+            *target.rank() == Rank::_1 || *target.rank() == Rank::_8
+        }
+
         // forward moves (including from start rank)
 
         let max_magnitude = if *from.rank() == start_rank { 2 } else { 1 };
@@ -646,8 +664,13 @@ impl Board {
         for target in Board::plus_vector_scaled(&from, &move_vector, max_magnitude) {
             if self.is_occupied(target.index()) {
                 break;
+            } else if is_promoting_square(&target) {
+                moves.extend(promoting_moves(from, target, pawn.color()));
             } else {
-                moves.push(target)
+                moves.push(Move::Single {
+                    from: from,
+                    to: target,
+                });
             }
         }
 
@@ -657,39 +680,29 @@ impl Board {
             .iter()
             .filter_map(|v| Board::plus_vector(&from, v))
         {
-            // standard capture
-            if self.can_capture(target.index(), pawn.color()) {
-                moves.push(target);
+            // capture and promote
+            if self.can_capture(target.index(), pawn.color()) && is_promoting_square(&target) {
+                moves.extend(promoting_moves(from, target, pawn.color()));
 
-            // en passant capture
+            // standard capture
+            } else if self.can_capture(target.index(), pawn.color()) {
+                moves.push(Move::Single {
+                    from: from,
+                    to: target,
+                });
+
+            // en passant capture, will never be promotion
             } else if let Some(en_passant_target) = self.en_passant_target {
                 if en_passant_target == target {
-                    moves.push(target);
+                    moves.push(Move::Single {
+                        from: from,
+                        to: target,
+                    });
                 }
             }
         }
 
-        // promotion
-
         moves
-            .iter()
-            .flat_map(|mv| match mv {
-                to if *to.rank() == Rank::_1 || *to.rank() == Rank::_8 => {
-                    vec![QUEEN, ROOK, BISHOP, KNIGHT]
-                        .into_iter()
-                        .map(|new_piece| Move::Promote {
-                            from: from,
-                            to: *to,
-                            piece: Piece(new_piece, pawn.color()),
-                        })
-                        .collect()
-                }
-                to => vec![Move::Single {
-                    from: from,
-                    to: *to,
-                }],
-            })
-            .collect()
     }
 
     // Note: does not exclude moves that put the king in check
