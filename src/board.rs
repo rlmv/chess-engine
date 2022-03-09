@@ -21,8 +21,6 @@ pub type Result<T> = std::result::Result<T, BoardError>;
  * - ingest lichess puzzles in a test suite
  */
 
-thread_local!(static move_cache: LruCache<Board, Vec<Move>> = LruCache::new(256));
-
 #[cached]
 fn cached_all_moves(board: Board, color: Color) -> Result<Vec<Move>> {
     board.all_moves(color)
@@ -460,29 +458,23 @@ impl Board {
     }
 
     fn is_in_check(&self, color: Color) -> Result<bool> {
-        let all_pieces = self.all_pieces_of_color(color);
+        let mut kings = self
+            .all_pieces_of_color(color)
+            .filter(|(p, _)| p.piece() == KING);
 
-        let kings: Vec<&(Piece, Square)> = all_pieces
-            .iter()
-            .filter(|(p, _)| p.piece() == KING)
-            .collect();
+        let (king, king_square) = kings.next().ok_or(IllegalState(format!(
+            "Board is missing KING of color {}",
+            color
+        )))?;
 
-        if kings.len() == 0 {
+        if kings.next().is_some() {
             return Err(IllegalState(format!(
-                "Board is missing KING of color {}",
-                color
-            )));
-        } else if kings.len() > 1 {
-            return Err(IllegalState(format!(
-                "Board has {} KINGs of color {}",
-                kings.len(),
+                "Board has more than on KING of color {}",
                 color
             )));
         }
 
-        let (king, king_square) = &kings[0];
-
-        self.attacked_by_color(*king_square, king.color().opposite())
+        self.attacked_by_color(king_square, king.color().opposite())
     }
 
     // attacking moves is a subset of other moves -
@@ -559,9 +551,8 @@ impl Board {
 
         let mut moves: Vec<Move> = self
             .all_pieces_of_color(color) // TODO: self.color_to_move?
-            .iter()
             .flat_map(move |(_, square)| {
-                self.legal_moves(*square)
+                self.legal_moves(square)
                     .unwrap() // TODO fix this
                     .into_iter()
             })
@@ -604,18 +595,18 @@ impl Board {
         }
     }
 
-    fn plus_vector_scaled(s: &Square, v: &MoveVector, max_magnitude: u8) -> Vec<Square> {
-        let mut targets: Vec<Square> = Vec::new();
-
-        for m in 1..=max_magnitude {
-            let scaled_v = v.times(m);
-
-            match Board::plus_vector(s, &scaled_v) {
-                Some(t) => targets.push(t),
-                None => break,
-            }
-        }
-        targets
+    fn plus_vector_scaled<'a>(
+        s: &'a Square,
+        v: &'a MoveVector,
+        max_magnitude: u8,
+    ) -> impl Iterator<Item = Square> + 'a {
+        (1..=max_magnitude)
+            .map(|m| {
+                let scaled_v = v.times(m);
+                Board::plus_vector(s, &scaled_v)
+            })
+            .take_while(|s| s.is_some())
+            .filter_map(|s| s)
     }
 
     fn _pawn_moves(&self, from: Square, pawn: &Piece) -> Vec<Move> {
@@ -641,11 +632,11 @@ impl Board {
 
         let max_magnitude = if *from.rank() == start_rank { 2 } else { 1 };
 
-        for target in Board::plus_vector_scaled(&from, &move_vector, max_magnitude).iter() {
+        for target in Board::plus_vector_scaled(&from, &move_vector, max_magnitude) {
             if self.is_occupied(target.index()) {
                 break;
             } else {
-                moves.push(*target)
+                moves.push(target)
             }
         }
 
@@ -805,19 +796,17 @@ impl Board {
         moves
     }
 
-    fn all_pieces_of_color(&self, color: Color) -> Vec<(Piece, Square)> {
-        let mut pieces: Vec<(Piece, Square)> = Vec::new();
-
-        for (i, p) in self.board.iter().enumerate() {
-            match Piece::from(*p) {
-                Some(piece) if piece.color() == color => {
-                    pieces.push((piece, Square::from_index(i)))
-                }
-                _ => (),
-            }
-        }
-
-        pieces
+    fn all_pieces_of_color<'a>(
+        &'a self,
+        color: Color,
+    ) -> impl Iterator<Item = (Piece, Square)> + 'a {
+        self.board
+            .iter()
+            .enumerate()
+            .filter_map(move |(i, p)| match Piece::from(*p) {
+                Some(piece) if piece.color() == color => Some((piece, Square::from_index(i))),
+                _ => None,
+            })
     }
 
     pub fn find_next_move(&self, depth: u8) -> Result<Option<(Move, Score)>> {
@@ -977,13 +966,11 @@ impl Board {
 
         let white_value: i32 = self
             .all_pieces_of_color(WHITE)
-            .iter()
             .map(|(p, _)| p.value())
             .sum();
 
         let black_value: i32 = self
             .all_pieces_of_color(BLACK)
-            .iter()
             .map(|(p, _)| p.value())
             .sum();
 
@@ -2005,7 +1992,7 @@ fn test_puzzle_grab_debug() {
 
 // TODO fix this test
 
-#[test]
+// #[test]
 // fn test_puzzle_smothered_mate() {
 //     // From https://www.chess.com/forum/view/endgames/endgame-puzzles2
 //     // q1r4k/6pp/8/3Q2N1/8/8/6PP/7K w - - 0 1
@@ -2035,6 +2022,7 @@ fn test_puzzle_grab_debug() {
 //         .should_find_move(H6, F7)
 //         .should_be_checkmate();
 // }
+
 #[test]
 fn test_pawn_movement_from_start_rank_white() {
     init();
@@ -2480,8 +2468,7 @@ fn test_foo() {
 
     let v2: Vec<Square> = board
         .all_pieces_of_color(color)
-        .iter()
-        .map(|(_, square)| *square)
+        .map(|(_, square)| square)
         .collect();
 
     assert_eq!(v1, v2);

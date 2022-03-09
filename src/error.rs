@@ -14,6 +14,7 @@ pub enum BoardError {
     ProtocolError(String),
     IllegalCastle, // TODO provide reason
     IllegalMove(String),
+    ConfigError(String),
 }
 
 impl fmt::Display for BoardError {
@@ -27,6 +28,7 @@ impl fmt::Display for BoardError {
             ProtocolError(msg) => write!(f, "{}", msg),
             IllegalCastle => write!(f, "Not allowed to castle in this position"),
             IllegalMove(msg) => write!(f, "{}", msg),
+            ConfigError(msg) => write!(f, "{}", msg),
         }
     }
 }
