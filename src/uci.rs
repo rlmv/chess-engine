@@ -1,5 +1,5 @@
 use crate::board::*;
-use crate::color::Color;
+use crate::color::*;
 use crate::error::BoardError;
 use crate::fen;
 use crate::mv::*;
@@ -135,7 +135,10 @@ impl UCIInterface {
                     let mv = board.find_next_move(depth)?;
 
                     if let Some((mv, _)) = mv {
-                        Ok(Some(vec![UCIResponse::BestMove { mv: mv }]))
+                        Ok(Some(vec![UCIResponse::BestMove {
+                            mv: mv,
+                            color: board.color_to_move,
+                        }]))
                     } else {
                         Err(BoardError::ProtocolError(
                             "No move found. In checkmate?".to_string(),
@@ -261,7 +264,7 @@ enum UCIResponse {
     Id,
     Ok,
     ReadyOk,
-    BestMove { mv: Move },
+    BestMove { mv: Move, color: Color },
     Option(String), // TODO actually implement
 }
 
@@ -272,7 +275,21 @@ impl fmt::Display for UCIResponse {
             UCIResponse::Id => write!(f, "id name chess-engine id author Bo"),
             UCIResponse::Ok => write!(f, "uciok"),
             UCIResponse::ReadyOk => write!(f, "readyok"),
-            UCIResponse::BestMove { mv } => write!(f, "bestmove {}", mv.to_string().to_lowercase()), // UCI really wants lowercase moves
+            UCIResponse::BestMove { mv, color } => {
+                let s = match mv {
+                    Move::Single { from: _, to: _ } => mv.to_string(),
+                    Move::Promote {
+                        from: _,
+                        to: _,
+                        piece: _,
+                    } => mv.to_string(),
+                    Move::CastleKingside if *color == WHITE => "e1g1".to_string(),
+                    Move::CastleKingside => "e8g8".to_string(),
+                    Move::CastleQueenside if *color == WHITE => "e1c1".to_string(),
+                    Move::CastleQueenside => "e8c8".to_string(),
+                };
+                write!(f, "bestmove {}", s.to_lowercase()) // UCI really wants lowercase moves
+            }
             UCIResponse::Option(s) => write!(f, "option {}", s),
         }?;
 
