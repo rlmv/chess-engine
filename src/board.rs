@@ -3,6 +3,7 @@ use log::{debug, info};
 use std::cmp;
 use std::fmt;
 
+use crate::bitboard::*;
 use crate::color::*;
 use crate::constants::*;
 use crate::error::BoardError;
@@ -125,6 +126,11 @@ pub struct Board {
     // Move #, incremented after Black plays
     fullmove_clock: u16,
     can_castle: CastleRights,
+
+    presence_white: Bitboard,
+    presence_black: Bitboard,
+    pawn_presence_white: PawnPresenceBitboard,
+    pawn_presence_black: PawnPresenceBitboard,
 }
 
 impl Board {
@@ -136,6 +142,10 @@ impl Board {
             halfmove_clock: 0,
             fullmove_clock: 1,
             can_castle: CastleRights::none(),
+            presence_white: Bitboard::empty(),
+            presence_black: Bitboard::empty(),
+            pawn_presence_white: PawnPresenceBitboard::empty(WHITE),
+            pawn_presence_black: PawnPresenceBitboard::empty(BLACK),
         }
     }
 
@@ -172,6 +182,8 @@ impl Board {
     pub fn place_piece(&self, piece: Piece, on: Square) -> Board {
         let mut new = self.clone();
         new.board[on.index()] = piece.encode();
+
+        new.update_bitboards().unwrap(); // TODO no unwrap
         new
     }
 
@@ -203,7 +215,42 @@ impl Board {
             new.halfmove_clock += 1
         }
 
+        new.update_bitboards()?;
+
         Ok(new)
+    }
+
+    fn update_bitboards(&mut self) -> Result<()> {
+        let mut pawn_presence_white = PawnPresenceBitboard::empty(WHITE);
+        let mut pawn_presence_black = PawnPresenceBitboard::empty(BLACK);
+
+        let mut presence_white = Bitboard::empty();
+        let mut presence_black = Bitboard::empty();
+
+        for (piece, square) in self.all_pieces() {
+            match piece.color() {
+                WHITE => {
+                    if piece.piece() == PAWN {
+                        pawn_presence_white = pawn_presence_white.set(square)
+                    }
+                    presence_white = presence_white.set(square)
+                }
+                BLACK => {
+                    if piece.piece() == PAWN {
+                        pawn_presence_black = pawn_presence_black.set(square)
+                    }
+                    presence_black = presence_black.set(square)
+                }
+            }
+        }
+
+        self.pawn_presence_white = pawn_presence_white;
+        self.pawn_presence_black = pawn_presence_black;
+
+        self.presence_white = presence_white;
+        self.presence_black = presence_black;
+
+        Ok(())
     }
 
     fn is_pawn_advance(&self, mv: Move) -> Result<bool> {
@@ -625,17 +672,9 @@ impl Board {
         assert!(*from.rank() != Rank::_1);
         assert!(*from.rank() != Rank::_8);
 
-        let (start_rank, move_vector, capture_vectors) = match pawn.color() {
-            WHITE => (
-                Rank::_2,
-                MoveVector(0, 1),
-                [MoveVector(1, 1), MoveVector(-1, 1)],
-            ),
-            BLACK => (
-                Rank::_7,
-                MoveVector(0, -1),
-                [MoveVector(1, -1), MoveVector(-1, -1)],
-            ),
+        let (start_rank, move_vector) = match pawn.color() {
+            WHITE => (Rank::_2, MoveVector(0, 1)),
+            BLACK => (Rank::_7, MoveVector(0, -1)),
         };
 
         fn promoting_moves(
@@ -675,29 +714,30 @@ impl Board {
 
         // capture
 
-        for target in capture_vectors
-            .iter()
-            .filter_map(|v| Board::plus_vector(&from, v))
-        {
+        let en_passant_target = self
+            .en_passant_target
+            .map(|target| Bitboard::empty().set(target))
+            .unwrap_or(Bitboard::empty());
+
+        // TODO: vectorize with pawn presence bitboards?
+        let this_piece = PawnPresenceBitboard::empty(pawn.color()).set(from);
+
+        let captures = match pawn.color() {
+            WHITE => this_piece.attacks() & (self.presence_black | en_passant_target),
+            BLACK => this_piece.attacks() & (self.presence_white | en_passant_target),
+        };
+
+        for target in captures.squares() {
             // capture and promote
-            if self.can_capture(target.index(), pawn.color()) && is_promoting_square(&target) {
+            if is_promoting_square(&target) {
                 moves.extend(promoting_moves(from, target, pawn.color()));
 
-            // standard capture
-            } else if self.can_capture(target.index(), pawn.color()) {
+            // standard capture or en passant
+            } else {
                 moves.push(Move::Single {
                     from: from,
                     to: target,
                 });
-
-            // en passant capture, will never be promotion
-            } else if let Some(en_passant_target) = self.en_passant_target {
-                if en_passant_target == target {
-                    moves.push(Move::Single {
-                        from: from,
-                        to: target,
-                    });
-                }
             }
         }
 
@@ -819,17 +859,19 @@ impl Board {
         moves
     }
 
+    fn all_pieces<'a>(&'a self) -> impl Iterator<Item = (Piece, Square)> + 'a {
+        self.board
+            .iter()
+            .enumerate()
+            .filter_map(move |(i, p)| Piece::from(*p).map(|piece| (piece, Square::from_index(i))))
+    }
+
     fn all_pieces_of_color<'a>(
         &'a self,
         color: Color,
     ) -> impl Iterator<Item = (Piece, Square)> + 'a {
-        self.board
-            .iter()
-            .enumerate()
-            .filter_map(move |(i, p)| match Piece::from(*p) {
-                Some(piece) if piece.color() == color => Some((piece, Square::from_index(i))),
-                _ => None,
-            })
+        self.all_pieces()
+            .filter(move |(piece, _)| piece.color() == color)
     }
 
     pub fn find_next_move(&self, depth: u8) -> Result<Option<(Move, Score)>> {
@@ -1000,23 +1042,23 @@ impl Board {
         let mut white_bonus: i32 = 0;
         let mut black_bonus: i32 = 0;
 
-        const off_initial_square: i32 = 50;
+        const OFF_INITIAL_SQUARE: i32 = 50;
 
-        const white_initial_squares: [(Square, u8); 4] =
+        const WHITE_INITIAL_SQUARES: [(Square, u8); 4] =
             [(B1, KNIGHT), (C1, BISHOP), (F1, BISHOP), (G1, KNIGHT)];
 
-        for (square, piece) in white_initial_squares.into_iter() {
+        for (square, piece) in WHITE_INITIAL_SQUARES.into_iter() {
             if self.piece_on_square(square) != Some(Piece(piece, WHITE)) {
-                white_bonus += off_initial_square;
+                white_bonus += OFF_INITIAL_SQUARE;
             }
         }
 
-        const black_initial_squares: [(Square, u8); 4] =
+        const BLACK_INITIAL_SQUARES: [(Square, u8); 4] =
             [(B8, KNIGHT), (C8, BISHOP), (F8, BISHOP), (G8, KNIGHT)];
 
-        for (square, piece) in black_initial_squares.into_iter() {
+        for (square, piece) in BLACK_INITIAL_SQUARES.into_iter() {
             if self.piece_on_square(square) != Some(Piece(piece, BLACK)) {
-                black_bonus += off_initial_square;
+                black_bonus += OFF_INITIAL_SQUARE;
             }
         }
 
