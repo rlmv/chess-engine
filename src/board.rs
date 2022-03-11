@@ -695,20 +695,32 @@ impl Board {
             *target.rank() == Rank::_1 || *target.rank() == Rank::_8
         }
 
+        // TODO: is it possible to vectorize over all pawns using the full
+        // presence bitboards?
+        let this_piece = PawnPresenceBitboard::empty(pawn.color()).set(from);
+
         // forward moves (including from start rank)
 
         let max_magnitude = if *from.rank() == start_rank { 2 } else { 1 };
 
-        for target in Board::plus_vector_scaled(&from, &move_vector, max_magnitude) {
-            if self.is_occupied(target.index()) {
-                break;
-            } else if is_promoting_square(&target) {
-                moves.extend(promoting_moves(from, target, pawn.color()));
-            } else {
-                moves.push(Move::Single {
+        for magnitude in 1..=max_magnitude {
+            let moved_forward = match pawn.color() {
+                WHITE => this_piece.b.north_by(magnitude),
+                BLACK => this_piece.b.south_by(magnitude),
+            };
+
+            let not_blocked = moved_forward & !(self.presence_black | self.presence_white);
+
+            // NOTE: only works because dealing with one pawn:
+            match not_blocked.squares().next() {
+                Some(target) if is_promoting_square(&target) => {
+                    moves.extend(promoting_moves(from, target, pawn.color()))
+                }
+                Some(target) => moves.push(Move::Single {
                     from: from,
                     to: target,
-                });
+                }),
+                None => break, // blocked, don't try the next square
             }
         }
 
@@ -718,9 +730,6 @@ impl Board {
             .en_passant_target
             .map(|target| Bitboard::empty().set(target))
             .unwrap_or(Bitboard::empty());
-
-        // TODO: vectorize with pawn presence bitboards?
-        let this_piece = PawnPresenceBitboard::empty(pawn.color()).set(from);
 
         let captures = match pawn.color() {
             WHITE => this_piece.attacks() & (self.presence_black | en_passant_target),
