@@ -47,8 +47,11 @@ impl Square {
         let &Square(file, rank) = &self;
         (rank.index() as usize * N_FILES + file.index() as usize).into()
     }
-}
 
+    pub fn all_squares() -> impl Iterator<Item = Square> {
+        (0..64).map(|i| Square::from_index(i))
+    }
+}
 pub const A1: Square = Square(File::A, Rank::_1);
 pub const A2: Square = Square(File::A, Rank::_2);
 pub const A3: Square = Square(File::A, Rank::_3);

@@ -1,14 +1,54 @@
+use crate::board::*;
 use crate::color::*;
 use crate::file::*;
 use crate::rank::*;
 use crate::square::*;
+use crate::vector::*;
 use std::fmt;
-use std::mem;
 use std::ops::{BitAnd, BitOr, Not};
+
+use lazy_static::lazy_static;
 
 /*
  * See https://rhysre.net/fast-chess-move-generation-with-magic-bitboards.html
  */
+
+// TODO: any runtime costs associated with lazy_static?
+lazy_static! {
+    pub static ref PRECOMPUTED_BITBOARDS: PrecomputedBitboards = precompute_bitboards();
+}
+
+pub struct PrecomputedBitboards {
+    pub king_moves: [Bitboard; 64], // TODO: can we index this by square directly?
+}
+
+fn precompute_bitboards() -> PrecomputedBitboards {
+    let mut king_moves = [Bitboard::empty(); 64];
+
+    const MOVE_VECTORS: [MoveVector; 8] = [
+        MoveVector(1, 1),
+        MoveVector(1, 0),
+        MoveVector(1, -1),
+        MoveVector(0, -1),
+        MoveVector(-1, -1),
+        MoveVector(-1, 0),
+        MoveVector(-1, 1),
+        MoveVector(0, 1),
+    ];
+
+    for from in Square::all_squares() {
+        for target in MOVE_VECTORS
+            .iter()
+            .filter_map(|v| Board::plus_vector(&from, v))
+        {
+            king_moves[from.index()] = king_moves[from.index()].set(target)
+        }
+    }
+
+    PrecomputedBitboards {
+        king_moves: king_moves,
+    }
+}
 
 const A_FILE: Bitboard = Bitboard(0x101010101010101);
 const H_FILE: Bitboard = Bitboard(0x8080808080808080);
@@ -148,7 +188,7 @@ impl fmt::Display for Bitboard {
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct PawnPresenceBitboard {
-    b: Bitboard,
+    pub b: Bitboard,
     color: Color,
 }
 
@@ -219,8 +259,9 @@ fn test_print() {
     println!("{}", board);
     println!("{:?}", board);
     println!("{:#x}", board);
-    assert!(false);
+    //    assert!(false);
 }
+
 #[test]
 fn test_bitboard_squares_no_panic_when_h8_is_set() {
     let squares = vec![F8, H8];
@@ -228,3 +269,12 @@ fn test_bitboard_squares_no_panic_when_h8_is_set() {
     assert_eq!(squares, bitboard.squares().collect::<Vec<Square>>());
 }
 
+#[test]
+fn test_precompute_bitboards() {
+    for (i, bitboard) in PRECOMPUTED_BITBOARDS.king_moves.iter().enumerate() {
+        println!("{}", Square::from_index(i));
+        println!("{}", bitboard);
+    }
+
+    //    assert!(false);
+}

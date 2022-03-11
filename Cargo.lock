@@ -192,6 +192,7 @@ dependencies = [
  "cached",
  "criterion",
  "env_logger",
+ "lazy_static",
  "log",
  "log-panics",
  "log4rs",

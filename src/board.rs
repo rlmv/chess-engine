@@ -19,6 +19,7 @@ pub type Result<T> = std::result::Result<T, BoardError>;
 /*
  * TODO:
  * - ingest lichess puzzles in a test suite
+ * https://github.com/AndyGrant/Ethereal/blob/master/src/movegen.c
  */
 
 #[cached]
@@ -628,7 +629,7 @@ impl Board {
         Ok(moves)
     }
 
-    fn plus_vector(s: &Square, v: &MoveVector) -> Option<Square> {
+    pub fn plus_vector(s: &Square, v: &MoveVector) -> Option<Square> {
         let signed_index = s.index() as i8;
 
         let MoveVector(x, y) = *v;
@@ -672,9 +673,9 @@ impl Board {
         assert!(*from.rank() != Rank::_1);
         assert!(*from.rank() != Rank::_8);
 
-        let (start_rank, move_vector) = match pawn.color() {
-            WHITE => (Rank::_2, MoveVector(0, 1)),
-            BLACK => (Rank::_7, MoveVector(0, -1)),
+        let start_rank = match pawn.color() {
+            WHITE => Rank::_2,
+            BLACK => Rank::_7,
         };
 
         fn promoting_moves(
@@ -755,31 +756,14 @@ impl Board {
 
     // Note: does not exclude moves that put the king in check
     fn _king_moves(&self, from: Square, king: &Piece) -> Vec<Square> {
-        let mut moves: Vec<Square> = Vec::new();
-        const MOVE_VECTORS: [MoveVector; 8] = [
-            MoveVector(1, 1),
-            MoveVector(1, 0),
-            MoveVector(1, -1),
-            MoveVector(0, -1),
-            MoveVector(-1, -1),
-            MoveVector(-1, 0),
-            MoveVector(-1, 1),
-            MoveVector(0, 1),
-        ];
+        let attacks = PRECOMPUTED_BITBOARDS.king_moves[from.index()];
 
-        for target in MOVE_VECTORS
-            .iter()
-            .filter_map(|v| Board::plus_vector(&from, v))
-        {
-            if self.is_occupied_by_color(target.index(), king.color()) {
-                // cannot move into square of own piece
-                continue;
-            } else {
-                moves.push(target);
-            }
-        }
+        let same_color = match king.color() {
+            WHITE => self.presence_white,
+            BLACK => self.presence_black,
+        };
 
-        moves
+        (attacks & !same_color).squares().collect()
     }
 
     fn _rook_moves(&self, from: Square, rook: &Piece) -> Vec<Square> {
@@ -912,7 +896,7 @@ impl Board {
 
         // Leaf node, we are done
         if depth == 0 {
-            return Ok((None, self.evaluate_position(path)?, path.into(), 1));
+            return Ok((None, self.evaluate_position()?, path.into(), 1));
         }
 
         let all_moves = cached_all_moves(*self, self.color_to_move)?;
@@ -1026,7 +1010,7 @@ impl Board {
      *
      * Positive values favor white, negative favor black.
      */
-    fn evaluate_position(&self, path: &TraversalPath) -> Result<Score> {
+    fn evaluate_position(&self) -> Result<Score> {
         if self.checkmate(BLACK)? {
             debug!("Found checkmate of {}", BLACK);
             return Ok(Score::checkmate_black());
@@ -2548,25 +2532,8 @@ fn test_en_passant_capture_black() {
 }
 
 #[test]
-
 fn test_foo() {
-    let board =
-        crate::fen::parse("rnbqkbnr/1p1ppppp/8/8/pPp2PPP/8/P1PPP3/RNBQKBNR b KQkq b3 0 5").unwrap();
+    let board = crate::fen::parse("5rk1/3n2pp/2p1p3/5pP1/1PPP4/8/5PP1/R5K1 b - - 0 26").unwrap();
 
-    let color = Color::WHITE;
-
-    let mut v1: Vec<Square> = vec![];
-
-    for (i, _) in board.board.iter().enumerate() {
-        if board.is_occupied_by_color(i, color) {
-            v1.push(Square::from_index(i));
-        }
-    }
-
-    let v2: Vec<Square> = board
-        .all_pieces_of_color(color)
-        .map(|(_, square)| square)
-        .collect();
-
-    assert_eq!(v1, v2);
+    board.find_next_move(4).unwrap();
 }
