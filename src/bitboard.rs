@@ -21,21 +21,25 @@ lazy_static! {
 pub struct PrecomputedBitboards {
     pub king_moves: [Bitboard; 64], // TODO: can we index this by square directly?
     pub knight_moves: [Bitboard; 64],
-    pub rook: RookBitboards,
+    pub rays: Rays, // for sliding pieces
 }
 
-pub struct RookBitboards {
+pub struct Rays {
     pub north: [Bitboard; 64],
-    pub south: [Bitboard; 64],
+    pub north_east: [Bitboard; 64],
     pub east: [Bitboard; 64],
+    pub south_east: [Bitboard; 64],
+    pub south: [Bitboard; 64],
+    pub south_west: [Bitboard; 64],
     pub west: [Bitboard; 64],
+    pub north_west: [Bitboard; 64],
 }
 
 fn precompute_bitboards() -> PrecomputedBitboards {
     PrecomputedBitboards {
         king_moves: king_moves(),
         knight_moves: knight_moves(),
-        rook: rook_moves(),
+        rays: rays(),
     }
 }
 
@@ -91,7 +95,7 @@ fn knight_moves() -> [Bitboard; 64] {
     knight_moves
 }
 
-fn rook_moves() -> RookBitboards {
+fn rays() -> Rays {
     const MAX_MAGNITUDE: u8 = 7;
 
     fn compute_rays(v: MoveVector) -> [Bitboard; 64] {
@@ -107,11 +111,15 @@ fn rook_moves() -> RookBitboards {
         rays
     }
 
-    RookBitboards {
+    Rays {
         north: compute_rays(MoveVector(0, 1)),
-        south: compute_rays(MoveVector(0, -1)),
+        north_east: compute_rays(MoveVector(1, 1)),
         east: compute_rays(MoveVector(1, 0)),
+        south_east: compute_rays(MoveVector(1, -1)),
+        south: compute_rays(MoveVector(0, -1)),
+        south_west: compute_rays(MoveVector(-1, -1)),
         west: compute_rays(MoveVector(-1, 0)),
+        north_west: compute_rays(MoveVector(-1, 1)),
     }
 }
 
@@ -358,7 +366,7 @@ fn test_bitboard_squares_no_panic_when_h8_is_set() {
 
 #[test]
 fn test_precompute_bitboards() {
-    for (i, bitboard) in PRECOMPUTED_BITBOARDS.rook.south.iter().enumerate() {
+    for (i, bitboard) in PRECOMPUTED_BITBOARDS.rays.south.iter().enumerate() {
         println!("{}", Square::from_index(i));
         println!("{}", bitboard);
     }

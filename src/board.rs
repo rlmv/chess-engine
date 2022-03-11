@@ -543,14 +543,17 @@ impl Board {
                 && !(self._knight_attacks(from, &p) & target_bitboard).is_empty()
             {
                 return Ok(true);
-            } else if p.piece() == BISHOP && self._bishop_moves(from, &p).iter().any(attacks_target)
+            } else if p.piece() == BISHOP
+                && !(self._bishop_attacks(from, &p) & target_bitboard).is_empty()
             {
                 return Ok(true);
             } else if p.piece() == ROOK
                 && !(self._rook_attacks(from, &p) & target_bitboard).is_empty()
             {
                 return Ok(true);
-            } else if p.piece() == QUEEN && self._queen_moves(from, &p).iter().any(attacks_target) {
+            } else if p.piece() == QUEEN
+                && !(self._queen_attacks(from, &p) & target_bitboard).is_empty()
+            {
                 return Ok(true);
             } else if p.piece() == KING
                 && !(self._king_attacks(from, &p) & target_bitboard).is_empty()
@@ -573,11 +576,15 @@ impl Board {
             Some(p) if p.piece() == KNIGHT => {
                 cross_product(from, self._knight_attacks(from, &p).squares().collect())
             }
-            Some(p) if p.piece() == BISHOP => cross_product(from, self._bishop_moves(from, &p)),
+            Some(p) if p.piece() == BISHOP => {
+                cross_product(from, self._bishop_attacks(from, &p).squares().collect())
+            }
             Some(p) if p.piece() == ROOK => {
                 cross_product(from, self._rook_attacks(from, &p).squares().collect())
             }
-            Some(p) if p.piece() == QUEEN => cross_product(from, self._queen_moves(from, &p)),
+            Some(p) if p.piece() == QUEEN => {
+                cross_product(from, self._queen_attacks(from, &p).squares().collect())
+            }
             Some(p) if p.piece() == KING => {
                 cross_product(from, self._king_attacks(from, &p).squares().collect())
             }
@@ -810,25 +817,79 @@ impl Board {
 
         compute_attacks(
             from,
-            PRECOMPUTED_BITBOARDS.rook.north,
+            PRECOMPUTED_BITBOARDS.rays.north,
             same_color,
             other_color,
             |b| b.bitscan_forward(),
         ) | compute_attacks(
             from,
-            PRECOMPUTED_BITBOARDS.rook.east,
+            PRECOMPUTED_BITBOARDS.rays.east,
             same_color,
             other_color,
             |b| b.bitscan_forward(),
         ) | compute_attacks(
             from,
-            PRECOMPUTED_BITBOARDS.rook.south,
+            PRECOMPUTED_BITBOARDS.rays.south,
             same_color,
             other_color,
             |b| b.bitscan_backward(),
         ) | compute_attacks(
             from,
-            PRECOMPUTED_BITBOARDS.rook.west,
+            PRECOMPUTED_BITBOARDS.rays.west,
+            same_color,
+            other_color,
+            |b| b.bitscan_backward(),
+        )
+    }
+
+    fn _bishop_attacks(&self, from: Square, bishop: &Piece) -> Bitboard {
+        let same_color = match bishop.color() {
+            WHITE => self.presence_white,
+            BLACK => self.presence_black,
+        };
+
+        let other_color = match bishop.color() {
+            WHITE => self.presence_black,
+            BLACK => self.presence_white,
+        };
+
+        fn compute_attacks(
+            from: Square,
+            rays: [Bitboard; 64],
+            same_color: Bitboard,
+            other_color: Bitboard,
+            bitscan: fn(Bitboard) -> Option<Square>,
+        ) -> Bitboard {
+            let intersections = rays[from.index()] & (same_color | other_color);
+
+            !same_color
+                & match bitscan(intersections) {
+                    Some(blocker) => rays[from.index()] & !rays[blocker.index()],
+                    None => rays[from.index()],
+                }
+        }
+
+        compute_attacks(
+            from,
+            PRECOMPUTED_BITBOARDS.rays.north_west,
+            same_color,
+            other_color,
+            |b| b.bitscan_forward(),
+        ) | compute_attacks(
+            from,
+            PRECOMPUTED_BITBOARDS.rays.north_east,
+            same_color,
+            other_color,
+            |b| b.bitscan_forward(),
+        ) | compute_attacks(
+            from,
+            PRECOMPUTED_BITBOARDS.rays.south_east,
+            same_color,
+            other_color,
+            |b| b.bitscan_backward(),
+        ) | compute_attacks(
+            from,
+            PRECOMPUTED_BITBOARDS.rays.south_west,
             same_color,
             other_color,
             |b| b.bitscan_backward(),
@@ -846,39 +907,8 @@ impl Board {
         attacks & !same_color
     }
 
-    fn _bishop_moves(&self, from: Square, bishop: &Piece) -> Vec<Square> {
-        let mut moves: Vec<Square> = Vec::new();
-
-        const MOVE_VECTORS: [MoveVector; 4] = [
-            MoveVector(1, 1),
-            MoveVector(1, -1),
-            MoveVector(-1, -1),
-            MoveVector(-1, 1),
-        ];
-
-        const MAX_MAGNITUDE: u8 = 7;
-
-        // Iterate allowed vectors, scaling by all possible magnitudes
-        for v in MOVE_VECTORS.iter() {
-            for target in Board::plus_vector_scaled(&from, v, MAX_MAGNITUDE) {
-                if self.is_occupied_by_color(target.index(), bishop.color()) {
-                    break;
-                } else if self.can_capture(target.index(), bishop.color()) {
-                    moves.push(target);
-                    break;
-                } else {
-                    moves.push(target);
-                }
-            }
-        }
-
-        moves
-    }
-
-    fn _queen_moves(&self, from: Square, queen: &Piece) -> Vec<Square> {
-        let mut moves: Vec<Square> = self._rook_attacks(from, queen).squares().collect();
-        moves.extend(self._bishop_moves(from, queen));
-        moves
+    fn _queen_attacks(&self, from: Square, queen: &Piece) -> Bitboard {
+        self._rook_attacks(from, queen) | self._bishop_attacks(from, queen)
     }
 
     fn all_pieces<'a>(&'a self) -> impl Iterator<Item = (Piece, Square)> + 'a {
