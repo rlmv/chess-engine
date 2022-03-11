@@ -129,6 +129,10 @@ impl Bitboard {
     pub fn west_by(&self, files: u8) -> Self {
         Bitboard(self.0 >> files)
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.0 == 0
+    }
 }
 
 pub struct SquareIterator<'a> {

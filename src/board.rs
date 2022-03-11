@@ -527,27 +527,35 @@ impl Board {
     // attacking moves is a subset of other moves -
 
     fn attacked_by_color(&self, target_square: Square, color: Color) -> Result<bool> {
-        for (_, square) in self.all_pieces_of_color(color) {
-            if self
-                .candidate_moves(square)?
-                .iter()
-                // Find square the move threatens to capture
-                .filter_map(|mv| match mv {
-                    Move::Single { from: _, to } => Some(to),
-                    Move::Promote {
-                        from: _,
-                        to,
-                        piece: _,
-                    } => Some(to),
-                    Move::CastleKingside => None,
-                    Move::CastleQueenside => None,
-                })
-                .find(|captures_square| *captures_square == &target_square)
-                .is_some()
+        let attacks_target = |square: &Square| *square == target_square;
+
+        let target_bitboard = Bitboard::empty().set(target_square);
+
+        for (p, from) in self.all_pieces_of_color(color) {
+            if p.piece() == PAWN {
+                let pawn = PawnPresenceBitboard::empty(p.color()).set(from);
+
+                if !(pawn.attacks() & target_bitboard).is_empty() {
+                    return Ok(true);
+                }
+            } else if p.piece() == KNIGHT
+                && !(self._knight_attacks(from, &p) & target_bitboard).is_empty()
+            {
+                return Ok(true);
+            } else if p.piece() == BISHOP && self._bishop_moves(from, &p).iter().any(attacks_target)
+            {
+                return Ok(true);
+            } else if p.piece() == ROOK && self._rook_moves(from, &p).iter().any(attacks_target) {
+                return Ok(true);
+            } else if p.piece() == QUEEN && self._queen_moves(from, &p).iter().any(attacks_target) {
+                return Ok(true);
+            } else if p.piece() == KING
+                && !(self._king_attacks(from, &p) & target_bitboard).is_empty()
             {
                 return Ok(true);
             }
         }
+
         Ok(false)
     }
 
@@ -559,11 +567,15 @@ impl Board {
         let target_moves = match Piece::from(self.board[from.index()]) {
             None => Err(NoPieceOnFromSquare(from))?,
             Some(p) if p.piece() == PAWN => self._pawn_moves(from, &p),
-            Some(p) if p.piece() == KNIGHT => cross_product(from, self._knight_moves(from, &p)),
+            Some(p) if p.piece() == KNIGHT => {
+                cross_product(from, self._knight_attacks(from, &p).squares().collect())
+            }
             Some(p) if p.piece() == BISHOP => cross_product(from, self._bishop_moves(from, &p)),
             Some(p) if p.piece() == ROOK => cross_product(from, self._rook_moves(from, &p)),
             Some(p) if p.piece() == QUEEN => cross_product(from, self._queen_moves(from, &p)),
-            Some(p) if p.piece() == KING => cross_product(from, self._king_moves(from, &p)),
+            Some(p) if p.piece() == KING => {
+                cross_product(from, self._king_attacks(from, &p).squares().collect())
+            }
             _ => Err(NotImplemented)?,
         };
 
@@ -753,7 +765,7 @@ impl Board {
     }
 
     // Note: does not exclude moves that put the king in check
-    fn _king_moves(&self, from: Square, king: &Piece) -> Vec<Square> {
+    fn _king_attacks(&self, from: Square, king: &Piece) -> Bitboard {
         let attacks = PRECOMPUTED_BITBOARDS.king_moves[from.index()];
 
         let same_color = match king.color() {
@@ -761,7 +773,7 @@ impl Board {
             BLACK => self.presence_black,
         };
 
-        (attacks & !same_color).squares().collect()
+        attacks & !same_color
     }
 
     fn _rook_moves(&self, from: Square, rook: &Piece) -> Vec<Square> {
@@ -793,7 +805,7 @@ impl Board {
         moves
     }
 
-    fn _knight_moves<'a>(&'a self, from: Square, knight: &'a Piece) -> Vec<Square> {
+    fn _knight_attacks<'a>(&'a self, from: Square, knight: &'a Piece) -> Bitboard {
         let attacks = PRECOMPUTED_BITBOARDS.knight_moves[from.index()];
 
         let same_color = match knight.color() {
@@ -801,7 +813,7 @@ impl Board {
             BLACK => self.presence_black,
         };
 
-        (attacks & !same_color).squares().collect()
+        attacks & !same_color
     }
 
     fn _bishop_moves(&self, from: Square, bishop: &Piece) -> Vec<Square> {
