@@ -559,9 +559,7 @@ impl Board {
         let target_moves = match Piece::from(self.board[from.index()]) {
             None => Err(NoPieceOnFromSquare(from))?,
             Some(p) if p.piece() == PAWN => self._pawn_moves(from, &p),
-            Some(p) if p.piece() == KNIGHT => {
-                cross_product(from, self._knight_moves(from, &p).collect())
-            }
+            Some(p) if p.piece() == KNIGHT => cross_product(from, self._knight_moves(from, &p)),
             Some(p) if p.piece() == BISHOP => cross_product(from, self._bishop_moves(from, &p)),
             Some(p) if p.piece() == ROOK => cross_product(from, self._rook_moves(from, &p)),
             Some(p) if p.piece() == QUEEN => cross_product(from, self._queen_moves(from, &p)),
@@ -668,7 +666,7 @@ impl Board {
     }
 
     fn _pawn_moves(&self, from: Square, pawn: &Piece) -> Vec<Move> {
-        let mut moves: Vec<Move> = Vec::new();
+        let mut moves: Vec<Move> = Vec::with_capacity(8);
 
         assert!(*from.rank() != Rank::_1);
         assert!(*from.rank() != Rank::_8);
@@ -795,26 +793,15 @@ impl Board {
         moves
     }
 
-    fn _knight_moves<'a>(
-        &'a self,
-        from: Square,
-        knight: &'a Piece,
-    ) -> impl Iterator<Item = Square> + 'a {
-        const MOVE_VECTORS: [MoveVector; 8] = [
-            MoveVector(1, 2),
-            MoveVector(2, 1),
-            MoveVector(2, -1),
-            MoveVector(1, -2),
-            MoveVector(-1, -2),
-            MoveVector(-2, -1),
-            MoveVector(-2, 1),
-            MoveVector(-1, 2),
-        ];
+    fn _knight_moves<'a>(&'a self, from: Square, knight: &'a Piece) -> Vec<Square> {
+        let attacks = PRECOMPUTED_BITBOARDS.knight_moves[from.index()];
 
-        MOVE_VECTORS
-            .iter()
-            .filter_map(move |v| Board::plus_vector(&from, v))
-            .filter(|target| !self.is_occupied_by_color(target.index(), knight.color()))
+        let same_color = match knight.color() {
+            WHITE => self.presence_white,
+            BLACK => self.presence_black,
+        };
+
+        (attacks & !same_color).squares().collect()
     }
 
     fn _bishop_moves(&self, from: Square, bishop: &Piece) -> Vec<Square> {

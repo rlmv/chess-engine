@@ -20,9 +20,17 @@ lazy_static! {
 
 pub struct PrecomputedBitboards {
     pub king_moves: [Bitboard; 64], // TODO: can we index this by square directly?
+    pub knight_moves: [Bitboard; 64],
 }
 
 fn precompute_bitboards() -> PrecomputedBitboards {
+    PrecomputedBitboards {
+        king_moves: king_moves(),
+        knight_moves: knight_moves(),
+    }
+}
+
+fn king_moves() -> [Bitboard; 64] {
     let mut king_moves = [Bitboard::empty(); 64];
 
     const MOVE_VECTORS: [MoveVector; 8] = [
@@ -45,9 +53,33 @@ fn precompute_bitboards() -> PrecomputedBitboards {
         }
     }
 
-    PrecomputedBitboards {
-        king_moves: king_moves,
+    king_moves
+}
+
+fn knight_moves() -> [Bitboard; 64] {
+    let mut knight_moves = [Bitboard::empty(); 64];
+
+    const MOVE_VECTORS: [MoveVector; 8] = [
+        MoveVector(1, 2),
+        MoveVector(2, 1),
+        MoveVector(2, -1),
+        MoveVector(1, -2),
+        MoveVector(-1, -2),
+        MoveVector(-2, -1),
+        MoveVector(-2, 1),
+        MoveVector(-1, 2),
+    ];
+
+    for from in Square::all_squares() {
+        for target in MOVE_VECTORS
+            .iter()
+            .filter_map(|v| Board::plus_vector(&from, v))
+        {
+            knight_moves[from.index()] = knight_moves[from.index()].set(target)
+        }
     }
+
+    knight_moves
 }
 
 const A_FILE: Bitboard = Bitboard(0x101010101010101);
