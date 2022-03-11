@@ -1016,10 +1016,10 @@ impl Board {
         } else if self.checkmate(WHITE)? {
             debug!("Found checkmate of {}", WHITE);
             return Ok(Score::checkmate_white());
-        } else if self.stalemate(self.color_to_move)? {
-            debug!("Found stalemate");
-            return Ok(Score::ZERO);
-        }
+        } // else if self.stalemate(self.color_to_move)? {
+          //     debug!("Found stalemate");
+          //     return Ok(Score::ZERO);
+          // }
 
         let white_value: i32 = self
             .all_pieces_of_color(WHITE)
