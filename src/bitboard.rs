@@ -29,10 +29,10 @@ impl Bitboard {
         Bitboard(self.0 | 1 << square.index())
     }
 
-    pub fn set_all(squares: Vec<Square>) -> Self {
+    pub fn set_all(squares: &Vec<Square>) -> Self {
         squares
             .into_iter()
-            .fold(Bitboard::empty(), |board, square| board.set(square))
+            .fold(Bitboard::empty(), |board, square| board.set(*square))
     }
 
     /*
@@ -77,7 +77,8 @@ impl<'a> Iterator for SquareIterator<'a> {
     type Item = Square;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.bitboard.0 >> self.offset == 0 {
+        // will panic if tries to shift more than 64 bits
+        if self.offset >= 64 || self.bitboard.0 >> self.offset == 0 {
             None
         } else {
             let next = (self.bitboard.0 >> self.offset).trailing_zeros();
@@ -208,7 +209,7 @@ fn test_pawn_attacks_black() {
 
 #[test]
 fn test_square() {
-    let b = Bitboard::set_all(vec![D2, H4, A6]);
+    let b = Bitboard::set_all(&vec![D2, H4, A6]);
     assert_eq!(b.squares().collect::<Vec<Square>>(), vec![D2, H4, A6]);
 }
 
@@ -220,3 +221,10 @@ fn test_print() {
     println!("{:#x}", board);
     assert!(false);
 }
+#[test]
+fn test_bitboard_squares_no_panic_when_h8_is_set() {
+    let squares = vec![F8, H8];
+    let bitboard = Bitboard::set_all(&squares);
+    assert_eq!(squares, bitboard.squares().collect::<Vec<Square>>());
+}
+
