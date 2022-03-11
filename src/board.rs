@@ -19,10 +19,11 @@ pub type Result<T> = std::result::Result<T, BoardError>;
 /*
  * TODO:
  * - ingest lichess puzzles in a test suite
- * https://github.com/AndyGrant/Ethereal/blob/master/src/movegen.c
+ * https://github.com/AndyGrant/Ethereal/blb/master/src/movegen.c
  */
 
-#[cached]
+// #[cached]
+// TODO: how can this be disabled for benchmarks?
 fn cached_all_moves(board: Board, color: Color) -> Result<Vec<Move>> {
     board.all_moves(color)
 }
@@ -545,7 +546,9 @@ impl Board {
             } else if p.piece() == BISHOP && self._bishop_moves(from, &p).iter().any(attacks_target)
             {
                 return Ok(true);
-            } else if p.piece() == ROOK && self._rook_moves(from, &p).iter().any(attacks_target) {
+            } else if p.piece() == ROOK
+                && !(self._rook_attacks(from, &p) & target_bitboard).is_empty()
+            {
                 return Ok(true);
             } else if p.piece() == QUEEN && self._queen_moves(from, &p).iter().any(attacks_target) {
                 return Ok(true);
@@ -571,7 +574,9 @@ impl Board {
                 cross_product(from, self._knight_attacks(from, &p).squares().collect())
             }
             Some(p) if p.piece() == BISHOP => cross_product(from, self._bishop_moves(from, &p)),
-            Some(p) if p.piece() == ROOK => cross_product(from, self._rook_moves(from, &p)),
+            Some(p) if p.piece() == ROOK => {
+                cross_product(from, self._rook_attacks(from, &p).squares().collect())
+            }
             Some(p) if p.piece() == QUEEN => cross_product(from, self._queen_moves(from, &p)),
             Some(p) if p.piece() == KING => {
                 cross_product(from, self._king_attacks(from, &p).squares().collect())
@@ -663,7 +668,7 @@ impl Board {
         }
     }
 
-    fn plus_vector_scaled<'a>(
+    pub fn plus_vector_scaled<'a>(
         s: &'a Square,
         v: &'a MoveVector,
         max_magnitude: u8,
@@ -776,33 +781,58 @@ impl Board {
         attacks & !same_color
     }
 
-    fn _rook_moves(&self, from: Square, rook: &Piece) -> Vec<Square> {
-        let mut moves: Vec<Square> = Vec::new();
+    fn _rook_attacks(&self, from: Square, rook: &Piece) -> Bitboard {
+        let same_color = match rook.color() {
+            WHITE => self.presence_white,
+            BLACK => self.presence_black,
+        };
 
-        const MOVE_VECTORS: [MoveVector; 4] = [
-            MoveVector(1, 0),
-            MoveVector(0, -1),
-            MoveVector(-1, 0),
-            MoveVector(0, 1),
-        ];
+        let other_color = match rook.color() {
+            WHITE => self.presence_black,
+            BLACK => self.presence_white,
+        };
 
-        const MAX_MAGNITUDE: u8 = 7;
+        fn compute_attacks(
+            from: Square,
+            rays: [Bitboard; 64],
+            same_color: Bitboard,
+            other_color: Bitboard,
+            bitscan: fn(Bitboard) -> Option<Square>,
+        ) -> Bitboard {
+            let intersections = rays[from.index()] & (same_color | other_color);
 
-        // Iterate allowed vectors, scaling by all possible magnitudes
-        for v in MOVE_VECTORS.iter() {
-            for target in Board::plus_vector_scaled(&from, v, MAX_MAGNITUDE) {
-                if self.is_occupied_by_color(target.index(), rook.color()) {
-                    break;
-                } else if self.can_capture(target.index(), rook.color()) {
-                    moves.push(target);
-                    break;
-                } else {
-                    moves.push(target);
+            !same_color
+                & match bitscan(intersections) {
+                    Some(blocker) => rays[from.index()] & !rays[blocker.index()],
+                    None => rays[from.index()],
                 }
-            }
         }
 
-        moves
+        compute_attacks(
+            from,
+            PRECOMPUTED_BITBOARDS.rook.north,
+            same_color,
+            other_color,
+            |b| b.bitscan_forward(),
+        ) | compute_attacks(
+            from,
+            PRECOMPUTED_BITBOARDS.rook.east,
+            same_color,
+            other_color,
+            |b| b.bitscan_forward(),
+        ) | compute_attacks(
+            from,
+            PRECOMPUTED_BITBOARDS.rook.south,
+            same_color,
+            other_color,
+            |b| b.bitscan_backward(),
+        ) | compute_attacks(
+            from,
+            PRECOMPUTED_BITBOARDS.rook.west,
+            same_color,
+            other_color,
+            |b| b.bitscan_backward(),
+        )
     }
 
     fn _knight_attacks<'a>(&'a self, from: Square, knight: &'a Piece) -> Bitboard {
@@ -846,7 +876,7 @@ impl Board {
     }
 
     fn _queen_moves(&self, from: Square, queen: &Piece) -> Vec<Square> {
-        let mut moves = self._rook_moves(from, queen);
+        let mut moves: Vec<Square> = self._rook_attacks(from, queen).squares().collect();
         moves.extend(self._bishop_moves(from, queen));
         moves
     }
@@ -1964,7 +1994,7 @@ fn test_avoid_stalemate() {
     assert_ne!(mv, Move::Single { from: D3, to: D8 });
 
     Puzzle::new(board)
-        .should_find_move(D3, D2)
+        .should_find_move(D3, D1)
         .respond_with(E6, E7)
         .should_find_move(H5, E5)
         .should_be_checkmate();

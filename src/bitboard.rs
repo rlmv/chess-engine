@@ -21,12 +21,21 @@ lazy_static! {
 pub struct PrecomputedBitboards {
     pub king_moves: [Bitboard; 64], // TODO: can we index this by square directly?
     pub knight_moves: [Bitboard; 64],
+    pub rook: RookBitboards,
+}
+
+pub struct RookBitboards {
+    pub north: [Bitboard; 64],
+    pub south: [Bitboard; 64],
+    pub east: [Bitboard; 64],
+    pub west: [Bitboard; 64],
 }
 
 fn precompute_bitboards() -> PrecomputedBitboards {
     PrecomputedBitboards {
         king_moves: king_moves(),
         knight_moves: knight_moves(),
+        rook: rook_moves(),
     }
 }
 
@@ -82,6 +91,30 @@ fn knight_moves() -> [Bitboard; 64] {
     knight_moves
 }
 
+fn rook_moves() -> RookBitboards {
+    const MAX_MAGNITUDE: u8 = 7;
+
+    fn compute_rays(v: MoveVector) -> [Bitboard; 64] {
+        let mut rays = [Bitboard::empty(); 64];
+
+        for from in Square::all_squares() {
+            // Iterate allowed vectors, scaling by all possible magnitudes
+            for target in Board::plus_vector_scaled(&from, &v, MAX_MAGNITUDE) {
+                rays[from.index()] = rays[from.index()].set(target);
+            }
+        }
+
+        rays
+    }
+
+    RookBitboards {
+        north: compute_rays(MoveVector(0, 1)),
+        south: compute_rays(MoveVector(0, -1)),
+        east: compute_rays(MoveVector(1, 0)),
+        west: compute_rays(MoveVector(-1, 0)),
+    }
+}
+
 const A_FILE: Bitboard = Bitboard(0x101010101010101);
 const H_FILE: Bitboard = Bitboard(0x8080808080808080);
 
@@ -132,6 +165,24 @@ impl Bitboard {
 
     pub fn is_empty(&self) -> bool {
         self.0 == 0
+    }
+
+    // least significant set bit
+    pub fn bitscan_forward(&self) -> Option<Square> {
+        if self.is_empty() {
+            None
+        } else {
+            Some(Square::from_index(self.0.trailing_zeros() as usize))
+        }
+    }
+
+    // most significant set bit
+    pub fn bitscan_backward(&self) -> Option<Square> {
+        if self.is_empty() {
+            None
+        } else {
+            Some(Square::from_index(63 - self.0.leading_zeros() as usize))
+        }
     }
 }
 
@@ -307,10 +358,10 @@ fn test_bitboard_squares_no_panic_when_h8_is_set() {
 
 #[test]
 fn test_precompute_bitboards() {
-    for (i, bitboard) in PRECOMPUTED_BITBOARDS.king_moves.iter().enumerate() {
+    for (i, bitboard) in PRECOMPUTED_BITBOARDS.rook.south.iter().enumerate() {
         println!("{}", Square::from_index(i));
         println!("{}", bitboard);
     }
 
-    //    assert!(false);
+    // assert!(false);
 }
