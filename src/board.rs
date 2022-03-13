@@ -596,6 +596,10 @@ impl Board {
 
     // Return all legal moves for the given square, filtering out those that result in
     // illegal states
+    //
+    // NOTE: do not use this. Inefficient, better to compare against the already
+    // moved board in find_next_move.
+    // TODO: refactor or remove
     fn legal_moves(&self, from: Square) -> Result<Vec<Move>> {
         // TODO assert that piece on square is color to move
 
@@ -621,7 +625,7 @@ impl Board {
         let mut moves: Vec<Move> = self
             .all_pieces_of_color(color) // TODO: self.color_to_move?
             .flat_map(move |(_, square)| {
-                self.legal_moves(square)
+                self.candidate_moves(square)
                     .unwrap() // TODO fix this
                     .into_iter()
             })
@@ -971,20 +975,6 @@ impl Board {
                 .join(", ")
         );
 
-        // No legal moves, this position is either checkmate or stalemate
-        if all_moves.len() == 0 {
-            if self.is_in_check(self.color_to_move)? {
-                debug!("Position is checkmate for {}", self.color_to_move);
-                return match self.color_to_move {
-                    WHITE => Ok((None, Score::checkmate_white(), path.into(), 1)),
-                    BLACK => Ok((None, Score::checkmate_black(), path.into(), 1)),
-                };
-            } else {
-                debug!("Position is stalemate");
-                return Ok((None, Score::ZERO, path.into(), 1));
-            }
-        }
-
         let mut best_move: Option<Move> = None;
         let mut best_score = match self.color_to_move {
             WHITE => Score::MIN,
@@ -1007,7 +997,8 @@ impl Board {
             // is not checkmate: if the recursive call below returns no
             // moves then the position is mate
             //
-            // TODO: this is confusing. Cleaner way to handle this? Filter all moves to only return legal moves?
+            // TODO: this is confusing. Cleaner way to handle this? Filter all
+            // moves to only return legal moves?
             if moved_board.is_in_check(self.color_to_move)? {
                 debug!(
                     "{}: Continue. In check after move {}{}",
@@ -1058,6 +1049,20 @@ impl Board {
             if alpha >= beta {
                 debug!("Found α={} >= β={}. Pruning rest of node.", alpha, beta);
                 return Ok((Some(*mv), score, mainline, node_count));
+            }
+        }
+
+        // No legal moves, this position is either checkmate or stalemate
+        if best_move.is_none() {
+            if self.is_in_check(self.color_to_move)? {
+                debug!("Position is checkmate for {}", self.color_to_move);
+                return match self.color_to_move {
+                    WHITE => Ok((None, Score::checkmate_white(), path.into(), 1)),
+                    BLACK => Ok((None, Score::checkmate_black(), path.into(), 1)),
+                };
+            } else {
+                debug!("Position is stalemate");
+                return Ok((None, Score::ZERO, path.into(), 1));
             }
         }
 
