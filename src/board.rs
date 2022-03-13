@@ -959,7 +959,7 @@ impl Board {
 
         // Leaf node, we are done
         if depth == 0 {
-            return Ok((None, self.evaluate_position()?, path.into(), 1));
+            return Ok((None, self.evaluate_position(path)?, path.into(), 1));
         }
 
         let all_moves = cached_all_moves(*self, self.color_to_move)?;
@@ -1074,17 +1074,18 @@ impl Board {
      *
      * Positive values favor white, negative favor black.
      */
-    fn evaluate_position(&self) -> Result<Score> {
-        if self.checkmate(BLACK)? {
+    fn evaluate_position(&self, path: &TraversalPath) -> Result<Score> {
+        if self.checkmate(self.color_to_move)? {
             debug!("Found checkmate of {}", BLACK);
-            return Ok(Score::checkmate_black());
-        } else if self.checkmate(WHITE)? {
-            debug!("Found checkmate of {}", WHITE);
-            return Ok(Score::checkmate_white());
-        } // else if self.stalemate(self.color_to_move)? {
-          //     debug!("Found stalemate");
-          //     return Ok(Score::ZERO);
-          // }
+            return match self.color_to_move {
+                WHITE => Ok(Score::checkmate_white()),
+                BLACK => Ok(Score::checkmate_black()),
+            };
+        }
+        // else if self.stalemate(self.color_to_move)? {
+        //     debug!("Found stalemate");
+        //     return Ok(Score::ZERO);
+        // }
 
         let white_value: i32 = self
             .all_pieces_of_color(WHITE)
