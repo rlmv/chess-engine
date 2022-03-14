@@ -13,7 +13,6 @@ use crate::mv::*;
 use crate::rank::*;
 use crate::square::*;
 use crate::vector::*;
-use cached::proc_macro::cached;
 pub type Result<T> = std::result::Result<T, BoardError>;
 
 pub use PieceEnum::*;
@@ -23,12 +22,6 @@ pub use PieceEnum::*;
  * - ingest lichess puzzles in a test suite
  * https://github.com/AndyGrant/Ethereal/blb/master/src/movegen.c
  */
-
-// #[cached]
-// TODO: how can this be disabled for benchmarks?
-fn cached_all_moves(board: Board, color: Color) -> Result<Vec<Move>> {
-    board.all_moves(color)
-}
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Copy, Hash)]
 pub struct Piece(pub PieceEnum, pub Color);
@@ -110,7 +103,7 @@ impl CastleRights {
     }
 }
 
-#[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
+#[derive(Clone, Eq, PartialEq, Debug, Hash)]
 pub struct Board {
     board: [Option<Piece>; 64],
     pub color_to_move: Color,
@@ -125,6 +118,7 @@ pub struct Board {
     presence_black: Bitboard,
     pawn_presence_white: PawnPresenceBitboard,
     pawn_presence_black: PawnPresenceBitboard,
+    pieces: Vec<(Piece, Square)>,
 }
 
 impl Board {
@@ -140,6 +134,7 @@ impl Board {
             presence_black: Bitboard::empty(),
             pawn_presence_white: PawnPresenceBitboard::empty(WHITE),
             pawn_presence_black: PawnPresenceBitboard::empty(BLACK),
+            pieces: Vec::new(),
         }
     }
 
@@ -215,13 +210,23 @@ impl Board {
     }
 
     fn update_bitboards(&mut self) -> Result<()> {
+        // Cache location of pieces.
+        // TODO: only use a sparse representation like this? HashMap?
+        self.pieces.clear();
+        self.pieces.extend(
+            self.board
+                .iter()
+                .enumerate()
+                .filter_map(move |(i, p)| p.map(|piece| (piece, Square::from_index(i)))),
+        );
+
         let mut pawn_presence_white = PawnPresenceBitboard::empty(WHITE);
         let mut pawn_presence_black = PawnPresenceBitboard::empty(BLACK);
 
         let mut presence_white = Bitboard::empty();
         let mut presence_black = Bitboard::empty();
 
-        for (piece, square) in self.all_pieces() {
+        for &(piece, square) in self.all_pieces() {
             match piece.color() {
                 WHITE => {
                     if piece.piece() == PAWN {
@@ -502,7 +507,7 @@ impl Board {
             .all_pieces_of_color(color)
             .filter(|(p, _)| p.piece() == KING);
 
-        let (king, king_square) = kings.next().ok_or(IllegalState(format!(
+        let &(king, king_square) = kings.next().ok_or(IllegalState(format!(
             "Board is missing KING of color {}",
             color
         )))?;
@@ -524,7 +529,7 @@ impl Board {
 
         let target_bitboard = Bitboard::empty().set(target_square);
 
-        for (p, from) in self.all_pieces_of_color(color) {
+        for &(p, from) in self.all_pieces_of_color(color) {
             if p.piece() == PAWN {
                 let pawn = PawnPresenceBitboard::empty(p.color()).set(from);
 
@@ -610,14 +615,10 @@ impl Board {
 
     // Return all legal moves possible for the given color, including castling and promotion
     fn all_moves(&self, color: Color) -> Result<Vec<Move>> {
-        // if let Some(cached_moves) = move_cache.with(|mut c| c.get(self).clone()) {
-        //     return Ok(*cached_moves);
-        // }
-
         let mut moves: Vec<Move> = self
             .all_pieces_of_color(color) // TODO: self.color_to_move?
             .flat_map(move |(_, square)| {
-                self.candidate_moves(square)
+                self.candidate_moves(*square)
                     .unwrap() // TODO fix this
                     .into_iter()
             })
@@ -630,8 +631,6 @@ impl Board {
         if self.can_castle_queenside(color)? {
             moves.push(Move::CastleQueenside)
         };
-
-        //        move_cache.with(|c| c.put(*self, moves.clone()));
 
         moves.sort_by_cached_key(|mv| match mv {
             Move::Promote {
@@ -907,17 +906,14 @@ impl Board {
         self._rook_attacks(from, queen) | self._bishop_attacks(from, queen)
     }
 
-    fn all_pieces<'a>(&'a self) -> impl Iterator<Item = (Piece, Square)> + 'a {
-        self.board
-            .iter()
-            .enumerate()
-            .filter_map(move |(i, p)| p.map(|piece| (piece, Square::from_index(i))))
+    fn all_pieces<'a>(&'a self) -> impl Iterator<Item = &(Piece, Square)> + 'a {
+        self.pieces.iter()
     }
 
     fn all_pieces_of_color<'a>(
         &'a self,
         color: Color,
-    ) -> impl Iterator<Item = (Piece, Square)> + 'a {
+    ) -> impl Iterator<Item = &(Piece, Square)> + 'a {
         self.all_pieces()
             .filter(move |(piece, _)| piece.color() == color)
     }
@@ -954,7 +950,7 @@ impl Board {
             return Ok((None, self.evaluate_position(path)?, path.into(), 1));
         }
 
-        let all_moves = cached_all_moves(*self, self.color_to_move)?;
+        let all_moves = self.all_moves(self.color_to_move)?;
 
         debug!(
             "{}: {}: All moves for position: {}",
@@ -1122,7 +1118,7 @@ impl Board {
 
         debug!("{}: In check. Evaluating for checkmate", color);
 
-        for mv in cached_all_moves(*self, color)?.iter() {
+        for mv in self.all_moves(color)?.iter() {
             let moved_board = self.make_move(*mv)?;
 
             // At least one way out!
@@ -1143,7 +1139,7 @@ impl Board {
 
         debug!("{}: Evaluating for stalemate", color);
 
-        for mv in cached_all_moves(*self, color)?.iter() {
+        for mv in self.all_moves(color)?.iter() {
             let moved_board = self.make_move(*mv)?;
 
             // At least one move that avoids check

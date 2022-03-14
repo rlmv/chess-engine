@@ -130,7 +130,7 @@ impl UCIInterface {
                 Ok(None)
             }
             UCICommand::Go => {
-                if let Some(board) = self.board {
+                if let Some(board) = &self.board {
                     let depth = 6; //  TODO configure depth, with options?
                     let mv = board.find_next_move(depth)?;
 
