@@ -797,7 +797,7 @@ impl Board {
 
         fn compute_attacks(
             from: Square,
-            rays: [Bitboard; 64],
+            rays: &[Bitboard; 64],
             same_color: Bitboard,
             other_color: Bitboard,
             bitscan: fn(Bitboard) -> Option<Square>,
@@ -813,25 +813,25 @@ impl Board {
 
         compute_attacks(
             from,
-            PRECOMPUTED_BITBOARDS.rays.north,
+            &PRECOMPUTED_BITBOARDS.rays.north,
             same_color,
             other_color,
             |b| b.bitscan_forward(),
         ) | compute_attacks(
             from,
-            PRECOMPUTED_BITBOARDS.rays.east,
+            &PRECOMPUTED_BITBOARDS.rays.east,
             same_color,
             other_color,
             |b| b.bitscan_forward(),
         ) | compute_attacks(
             from,
-            PRECOMPUTED_BITBOARDS.rays.south,
+            &PRECOMPUTED_BITBOARDS.rays.south,
             same_color,
             other_color,
             |b| b.bitscan_backward(),
         ) | compute_attacks(
             from,
-            PRECOMPUTED_BITBOARDS.rays.west,
+            &PRECOMPUTED_BITBOARDS.rays.west,
             same_color,
             other_color,
             |b| b.bitscan_backward(),
@@ -851,7 +851,7 @@ impl Board {
 
         fn compute_attacks(
             from: Square,
-            rays: [Bitboard; 64],
+            rays: &[Bitboard; 64],
             same_color: Bitboard,
             other_color: Bitboard,
             bitscan: fn(Bitboard) -> Option<Square>,
@@ -867,25 +867,25 @@ impl Board {
 
         compute_attacks(
             from,
-            PRECOMPUTED_BITBOARDS.rays.north_west,
+            &PRECOMPUTED_BITBOARDS.rays.north_west,
             same_color,
             other_color,
             |b| b.bitscan_forward(),
         ) | compute_attacks(
             from,
-            PRECOMPUTED_BITBOARDS.rays.north_east,
+            &PRECOMPUTED_BITBOARDS.rays.north_east,
             same_color,
             other_color,
             |b| b.bitscan_forward(),
         ) | compute_attacks(
             from,
-            PRECOMPUTED_BITBOARDS.rays.south_east,
+            &PRECOMPUTED_BITBOARDS.rays.south_east,
             same_color,
             other_color,
             |b| b.bitscan_backward(),
         ) | compute_attacks(
             from,
-            PRECOMPUTED_BITBOARDS.rays.south_west,
+            &PRECOMPUTED_BITBOARDS.rays.south_west,
             same_color,
             other_color,
             |b| b.bitscan_backward(),
