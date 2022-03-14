@@ -16,6 +16,8 @@ use crate::vector::*;
 use cached::proc_macro::cached;
 pub type Result<T> = std::result::Result<T, BoardError>;
 
+pub use PieceEnum::*;
+
 /*
  * TODO:
  * - ingest lichess puzzles in a test suite
@@ -28,38 +30,22 @@ fn cached_all_moves(board: Board, color: Color) -> Result<Vec<Move>> {
     board.all_moves(color)
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Copy)]
-pub struct Piece(pub u8, pub Color);
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Copy, Hash)]
+pub struct Piece(pub PieceEnum, pub Color);
 
 impl Piece {
-    fn piece(&self) -> u8 {
-        let Piece(piece, _) = self;
-        piece & PIECE_MASK
+    fn piece(&self) -> PieceEnum {
+        self.0
     }
 
     fn color(&self) -> Color {
-        let Piece(_, color) = self;
-        *color
-    }
-    fn encode(&self) -> u8 {
-        let Piece(piece, color) = *self;
-        (piece & PIECE_MASK) | (color.encode())
-    }
-
-    pub fn from(x: u8) -> Option<Self> {
-        if x & PIECE_MASK == EMPTY {
-            return None;
-        }
-
-        let color = Color::from(x);
-
-        Some(Piece(x & PIECE_MASK, color))
+        self.1
     }
 
     // Relative values of each piece
     fn value(&self) -> i32 {
         let Piece(piece, _) = *self;
-        match piece & PIECE_MASK {
+        match piece {
             PAWN => 100,
             KNIGHT => 300,
             BISHOP => 300,
@@ -71,24 +57,30 @@ impl Piece {
     }
 }
 
-const EMPTY: u8 = 0b00000000;
-pub const PAWN: u8 = 0b00000001;
-pub const KNIGHT: u8 = 0b00000010;
-pub const BISHOP: u8 = 0b00000011;
-pub const ROOK: u8 = 0b000000100;
-pub const QUEEN: u8 = 0b00000101;
-pub const KING: u8 = 0b00000110;
-
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Copy, Hash)]
 pub enum PieceEnum {
-    Pawn,
-    Knight,
-    Bishop,
-    Rook,
-    Queen,
-    King,
+    PAWN,
+    KNIGHT,
+    BISHOP,
+    ROOK,
+    QUEEN,
+    KING,
 }
 
-const PIECE_MASK: u8 = 0b00000111;
+impl fmt::Display for PieceEnum {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let symbol = match self {
+            PAWN => 'p',
+            KNIGHT => 'n',
+            BISHOP => 'b',
+            ROOK => 'r',
+            QUEEN => 'q',
+            KING => 'k',
+        };
+
+        write!(f, "{} ", symbol)
+    }
+}
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
 pub struct CastleRights {
@@ -120,7 +112,7 @@ impl CastleRights {
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
 pub struct Board {
-    board: [u8; 64],
+    board: [Option<Piece>; 64],
     pub color_to_move: Color,
     en_passant_target: Option<Square>,
     // # of moves since last capture or pawn advance. For enforcing the 50-move rule.
@@ -138,7 +130,7 @@ pub struct Board {
 impl Board {
     pub fn empty() -> Self {
         Board {
-            board: [EMPTY; 64],
+            board: [None; 64],
             color_to_move: WHITE,
             en_passant_target: None,
             halfmove_clock: 0,
@@ -183,7 +175,7 @@ impl Board {
 
     pub fn place_piece(&self, piece: Piece, on: Square) -> Board {
         let mut new = self.clone();
-        new.board[on.index()] = piece.encode();
+        new.board[on.index()] = Some(piece);
 
         new.update_bitboards().unwrap(); // TODO no unwrap
         new
@@ -304,16 +296,16 @@ impl Board {
         if color == Color::WHITE {
             self.board[G1.index()] = self.board[E1.index()];
             self.board[F1.index()] = self.board[H1.index()];
-            self.board[E1.index()] = EMPTY;
-            self.board[H1.index()] = EMPTY;
+            self.board[E1.index()] = None;
+            self.board[H1.index()] = None;
 
             self.can_castle.kingside_white = false;
             self.can_castle.queenside_white = false;
         } else {
             self.board[G8.index()] = self.board[E8.index()];
             self.board[F8.index()] = self.board[H8.index()];
-            self.board[E8.index()] = EMPTY;
-            self.board[H8.index()] = EMPTY;
+            self.board[E8.index()] = None;
+            self.board[H8.index()] = None;
 
             self.can_castle.kingside_black = false;
             self.can_castle.queenside_black = false;
@@ -330,16 +322,16 @@ impl Board {
         if color == Color::WHITE {
             self.board[C1.index()] = self.board[E1.index()];
             self.board[D1.index()] = self.board[A1.index()];
-            self.board[A1.index()] = EMPTY;
-            self.board[E1.index()] = EMPTY;
+            self.board[A1.index()] = None;
+            self.board[E1.index()] = None;
 
             self.can_castle.kingside_white = false;
             self.can_castle.queenside_white = false;
         } else {
             self.board[C8.index()] = self.board[E8.index()];
             self.board[D8.index()] = self.board[A8.index()];
-            self.board[A8.index()] = EMPTY;
-            self.board[E8.index()] = EMPTY;
+            self.board[A8.index()] = None;
+            self.board[E8.index()] = None;
 
             self.can_castle.kingside_black = false;
             self.can_castle.queenside_black = false;
@@ -433,7 +425,7 @@ impl Board {
                 };
 
                 assert!(!self.is_empty(captured_square));
-                self.board[captured_square] = EMPTY;
+                self.board[captured_square] = None;
 
             // Update castling
             } else if piece == ROOK && color == WHITE && from == A1 {
@@ -453,7 +445,7 @@ impl Board {
             }
 
             self.board[j] = self.board[i];
-            self.board[i] = EMPTY;
+            self.board[i] = None;
         } else {
             return Err(NoPieceOnFromSquare(from));
         }
@@ -472,12 +464,12 @@ impl Board {
         let i = from.index();
         let j = to.index();
 
-        if self.board[i] & PIECE_MASK == EMPTY {
+        if self.board[i].is_none() {
             return Err(NoPieceOnFromSquare(from));
         }
 
-        self.board[j] = piece.encode();
-        self.board[i] = EMPTY;
+        self.board[j] = Some(piece);
+        self.board[i] = None;
 
         Ok(())
     }
@@ -487,7 +479,7 @@ impl Board {
     }
 
     fn is_empty(&self, square: usize) -> bool {
-        Piece::from(self.board[square]).is_none()
+        self.board[square].is_none()
     }
 
     fn can_capture(&self, target: usize, attacker: Color) -> bool {
@@ -495,14 +487,14 @@ impl Board {
     }
 
     fn is_occupied_by_color(&self, square: usize, color: Color) -> bool {
-        match Piece::from(self.board[square]) {
+        match self.board[square] {
             Some(piece) if piece.color() == color => true,
             _ => false,
         }
     }
 
     pub fn piece_on_square(&self, square: Square) -> Option<Piece> {
-        Piece::from(self.board[square.index()])
+        self.board[square.index()]
     }
 
     fn is_in_check(&self, color: Color) -> Result<bool> {
@@ -570,7 +562,7 @@ impl Board {
     fn candidate_moves(&self, from: Square) -> Result<Vec<Move>> {
         // TODO: check color, turn
 
-        let target_moves = match Piece::from(self.board[from.index()]) {
+        let target_moves = match self.board[from.index()] {
             None => Err(NoPieceOnFromSquare(from))?,
             Some(p) if p.piece() == PAWN => self._pawn_moves(from, &p),
             Some(p) if p.piece() == KNIGHT => {
@@ -919,7 +911,7 @@ impl Board {
         self.board
             .iter()
             .enumerate()
-            .filter_map(move |(i, p)| Piece::from(*p).map(|piece| (piece, Square::from_index(i))))
+            .filter_map(move |(i, p)| p.map(|piece| (piece, Square::from_index(i))))
     }
 
     fn all_pieces_of_color<'a>(
@@ -1102,7 +1094,7 @@ impl Board {
 
         const OFF_INITIAL_SQUARE: i32 = 50;
 
-        const WHITE_INITIAL_SQUARES: [(Square, u8); 4] =
+        const WHITE_INITIAL_SQUARES: [(Square, PieceEnum); 4] =
             [(B1, KNIGHT), (C1, BISHOP), (F1, BISHOP), (G1, KNIGHT)];
 
         for (square, piece) in WHITE_INITIAL_SQUARES.into_iter() {
@@ -1111,7 +1103,7 @@ impl Board {
             }
         }
 
-        const BLACK_INITIAL_SQUARES: [(Square, u8); 4] =
+        const BLACK_INITIAL_SQUARES: [(Square, PieceEnum); 4] =
             [(B8, KNIGHT), (C8, BISHOP), (F8, BISHOP), (G8, KNIGHT)];
 
         for (square, piece) in BLACK_INITIAL_SQUARES.into_iter() {
@@ -1172,12 +1164,11 @@ impl fmt::Display for Board {
             write!(f, "{} ", rank)?;
 
             for file in FILES.iter() {
-                let piece: Option<Piece> =
-                    Piece::from(self.board[Square::new(*file, *rank).index()]);
+                let piece: Option<Piece> = self.board[Square::new(*file, *rank).index()];
 
                 let symbol = match piece {
                     Some(piece) => square_symbol(&piece),
-                    None => ' ',
+                    None => " ".to_string(),
                 };
                 write!(f, "{} ", symbol)?;
             }
@@ -1192,19 +1183,10 @@ impl fmt::Display for Board {
     }
 }
 
-pub fn square_symbol(p: &Piece) -> char {
+pub fn square_symbol(p: &Piece) -> String {
     let Piece(piece, color) = *p;
 
-    let uncolored = match piece & PIECE_MASK {
-        EMPTY => ' ',
-        PAWN => 'p',
-        KNIGHT => 'n',
-        BISHOP => 'b',
-        ROOK => 'r',
-        QUEEN => 'q',
-        KING => 'k',
-        unknown => panic!("Unknown piece {}", unknown),
-    };
+    let uncolored = piece.to_string();
 
     match color {
         BLACK => uncolored,
