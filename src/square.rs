@@ -28,10 +28,12 @@ impl Square {
     }
 
     pub fn from_index(i: usize) -> Square {
-        //        TODO: any way to get rid of this bounds check for speed up?
-        if i >= N_SQUARES {
-            panic!("Square index {} is larger than max {}", i, N_SQUARES);
-        }
+        debug_assert!(
+            i < N_SQUARES,
+            "Square index {} is larger than max {}",
+            i,
+            N_SQUARES
+        );
         Square(i)
     }
 
