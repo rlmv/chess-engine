@@ -696,8 +696,8 @@ impl Board {
     fn _pawn_moves(&self, from: Square, pawn: &Piece) -> Vec<Move> {
         let mut moves: Vec<Move> = Vec::with_capacity(8);
 
-        assert!(*from.rank() != Rank::_1);
-        assert!(*from.rank() != Rank::_8);
+        assert!(from.rank() != Rank::_1);
+        assert!(from.rank() != Rank::_8);
 
         let start_rank = match pawn.color() {
             WHITE => Rank::_2,
@@ -719,7 +719,7 @@ impl Board {
         }
 
         fn is_promoting_square(target: &Square) -> bool {
-            *target.rank() == Rank::_1 || *target.rank() == Rank::_8
+            target.rank() == Rank::_1 || target.rank() == Rank::_8
         }
 
         // TODO: is it possible to vectorize over all pawns using the full
@@ -728,7 +728,7 @@ impl Board {
 
         // forward moves (including from start rank)
 
-        let max_magnitude = if *from.rank() == start_rank { 2 } else { 1 };
+        let max_magnitude = if from.rank() == start_rank { 2 } else { 1 };
 
         for magnitude in 1..=max_magnitude {
             let moved_forward = match pawn.color() {
