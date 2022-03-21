@@ -71,7 +71,7 @@ impl fmt::Display for PieceEnum {
             KING => 'k',
         };
 
-        write!(f, "{} ", symbol)
+        write!(f, "{}", symbol)
     }
 }
 
