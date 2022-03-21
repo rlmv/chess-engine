@@ -12,7 +12,7 @@ use nom::{
     self,
     branch::alt,
     bytes::complete::tag,
-    character::complete::{one_of, space1},
+    character::complete::{alpha1, alphanumeric1, one_of, space1},
     combinator::{map, opt},
     multi::many1,
     sequence::{preceded, tuple},
@@ -42,25 +42,47 @@ pub fn run_uci() -> Result<()> {
     }
 }
 
+struct UCIOptions {
+    depth: u8,
+}
+
+impl UCIOptions {
+    fn default() -> Self {
+        UCIOptions { depth: 6 }
+    }
+}
+
 // UCI state machine
 struct UCIInterface {
     board: Option<Board>,
+    options: UCIOptions,
 }
 
 impl UCIInterface {
     fn new() -> UCIInterface {
-        UCIInterface { board: None }
+        UCIInterface {
+            board: None,
+            options: UCIOptions::default(),
+        }
     }
 
     fn run_command(&mut self, command: UCICommand) -> Result<Option<Vec<UCIResponse>>> {
         match command {
             UCICommand::UCI => Ok(Some(vec![
                 UCIResponse::Id,
-                // TODO: options
-                UCIResponse::Option("name Hash type spin default 1 min 1 max 128".to_string()),
+                UCIResponse::Option("name Depth type spin default 6 min 2 max 12".to_string()),
                 UCIResponse::Ok,
             ])),
-            UCICommand::SetOption => Ok(None), // TODO
+            UCICommand::SetOption { name, value } => {
+                if name == "depth" {
+                    self.options.depth = value.parse().map_err(|_| {
+                        BoardError::ConfigError(format!("Could not parse value {}", value))
+                    })?;
+                    Ok(None)
+                } else {
+                    Err(BoardError::ConfigError(format!("Unknown option {}", name)))
+                }
+            }
             UCICommand::IsReady => Ok(Some(vec![UCIResponse::ReadyOk])),
             UCICommand::Position(mut new_board, moves) => {
                 if let Some(moves) = moves {
@@ -131,8 +153,7 @@ impl UCIInterface {
             }
             UCICommand::Go => {
                 if let Some(board) = &self.board {
-                    let depth = 6; //  TODO configure depth, with options?
-                    let mv = board.find_next_move(depth)?;
+                    let mv = board.find_next_move(self.options.depth)?;
 
                     if let Some((mv, _)) = mv {
                         Ok(Some(vec![UCIResponse::BestMove {
@@ -170,7 +191,25 @@ fn parse_uci_input(input: &str) -> Result<UCICommand> {
 
     let is_ready = map(tag("isready"), |_: &str| UCICommand::IsReady);
 
-    let set_option = map(tag("setoption"), |_: &str| UCICommand::SetOption);
+    fn set_option(i: &str) -> IResult<&str, UCICommand> {
+        let (i, _) = tag("setoption")(i)?;
+        let (i, _) = space1(i)?;
+        let (i, _) = tag("name")(i)?;
+        let (i, _) = space1(i)?;
+        let (i, name) = alpha1(i)?;
+        let (i, _) = space1(i)?;
+        let (i, _) = tag("value")(i)?;
+        let (i, _) = space1(i)?;
+        let (i, value) = alphanumeric1(i)?;
+
+        Ok((
+            i,
+            UCICommand::SetOption {
+                name: name.to_string().to_lowercase(),
+                value: value.to_string(),
+            },
+        ))
+    }
 
     let quit = map(tag("quit"), |_: &str| UCICommand::Quit);
 
@@ -252,7 +291,7 @@ fn parse_uci_input(input: &str) -> Result<UCICommand> {
 enum UCICommand {
     UCI,
     Position(Board, Option<Vec<Move>>),
-    SetOption, // TODO: parse name / value
+    SetOption { name: String, value: String },
     Quit,
     IsReady,
     Stop,
