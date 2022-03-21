@@ -11,7 +11,7 @@ use crate::rank::*;
 
 type Result<T> = std::result::Result<T, BoardError>;
 
-#[derive(Debug, Eq, PartialEq, Clone, Copy, Hash)]
+#[derive(Eq, PartialEq, Clone, Copy, Hash)]
 pub struct Square(usize);
 
 impl Square {
@@ -141,6 +141,12 @@ impl PartialOrd for Square {
 }
 
 impl fmt::Display for Square {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}{}", self.file(), self.rank())
+    }
+}
+
+impl fmt::Debug for Square {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}{}", self.file(), self.rank())
     }
