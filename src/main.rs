@@ -103,12 +103,13 @@ fn evaluate_fen(fen: &String, depth: u8) -> () {
     println!("Parsed board: \n\n{}\n", board);
     println!("Searching for best move to depth {}...\n", depth);
 
-    let mv = board.find_next_move(depth).unwrap();
+    let result = board.find_best_move(depth).unwrap();
 
-    match mv {
-        None => println!("No move found. In checkmate?"),
-        Some((mv, _)) => {
+    match result {
+        (None, _, _, _) => println!("No move found. In checkmate?"),
+        (Some(mv), _, _, node_count) => {
             println!("Done. Best move is {}\n", mv);
+            println!("Evaluated {} nodes\n", node_count);
             let moved_board = board.make_move(mv).unwrap();
             println!("{}\n", moved_board);
         }

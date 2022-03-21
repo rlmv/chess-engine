@@ -37,15 +37,13 @@ impl Piece {
 
     // Relative values of each piece
     fn value(&self) -> i32 {
-        let Piece(piece, _) = *self;
-        match piece {
+        match self.piece() {
             PAWN => 100,
             KNIGHT => 300,
             BISHOP => 300,
             ROOK => 500,
             QUEEN => 900,
             KING => 100000,
-            _ => panic!("Unknown piece {}", piece),
         }
     }
 }
@@ -280,7 +278,9 @@ impl Board {
                 to,
                 piece: _,
             } => match self.piece_on_square(to) {
-                Some(Piece(_, target_color)) if target_color == self.color_to_move.opposite() => {
+                Some(Piece(target_piece, target_color))
+                    if target_color == self.color_to_move.opposite() =>
+                {
                     Ok(true)
                 }
                 Some(_) => Err(IllegalMove(
@@ -290,6 +290,26 @@ impl Board {
             },
             Move::CastleKingside => Ok(false),
             Move::CastleQueenside => Ok(false),
+        }
+    }
+    fn captured_value(&self, mv: Move) -> Result<i32> {
+        // TODO include en passant capture here
+        match mv {
+            Move::Single { from: _, to }
+            | Move::Promote {
+                from: _,
+                to,
+                piece: _,
+            } => match self.piece_on_square(to) {
+                Some(piece) if piece.color() == self.color_to_move.opposite() => Ok(piece.value()),
+
+                Some(_) => Err(IllegalMove(
+                    "Trying to capture piece of same color".to_string(),
+                )),
+                None => Err(IllegalMove("Trying to capture no piece".to_string())),
+            },
+            Move::CastleKingside => Err(IllegalMove("Trying to capture no piece".to_string())),
+            Move::CastleQueenside => Err(IllegalMove("Trying to capture no piece".to_string())),
         }
     }
 
@@ -525,8 +545,6 @@ impl Board {
     // attacking moves is a subset of other moves -
 
     fn attacked_by_color(&self, target_square: Square, color: Color) -> Result<bool> {
-        let attacks_target = |square: &Square| *square == target_square;
-
         let target_bitboard = Bitboard::empty().set(target_square);
 
         for &(p, from) in self.all_pieces_of_color(color) {
@@ -635,13 +653,17 @@ impl Board {
         moves.sort_by_cached_key(|mv| match mv {
             Move::Promote {
                 from: _,
-                to: _,
+                to,
                 piece: _,
             } => 1,
-            Move::Single { from: _, to: _ } if self.is_capture(*mv).unwrap() => 2,
-            Move::CastleKingside => 3,
-            Move::CastleQueenside => 3,
-            Move::Single { from: _, to: _ } => 4,
+            Move::Single { from: _, to } if self.is_capture(*mv).unwrap() => {
+                // prioritize capturing larger pieces
+                1000000 - self.piece_on_square(*to).unwrap().value()
+            }
+
+            Move::CastleKingside => 1000001,
+            Move::CastleQueenside => 1000001,
+            Move::Single { from: _, to: _ } => 1000002,
         });
         Ok(moves)
     }
@@ -919,6 +941,11 @@ impl Board {
     }
 
     pub fn find_next_move(&self, depth: u8) -> Result<Option<(Move, Score)>> {
+        let (mv, score, _, _) = self.find_best_move(depth)?;
+        Ok(mv.map(|m| (m, score)))
+    }
+
+    pub fn find_best_move(&self, depth: u8) -> Result<(Option<Move>, Score, Vec<Move>, u64)> {
         let (mv, score, path, node_count) =
             self._find_next_move(depth, &TraversalPath::head(), Score::MIN, Score::MAX)?;
 
@@ -926,7 +953,8 @@ impl Board {
             "Main line score={}, path={:?}, node_count={}",
             score, path, node_count
         );
-        Ok(mv.map(|m| (m, score)))
+
+        Ok((mv, score, path, node_count))
     }
 
     fn _find_next_move(
@@ -1070,10 +1098,6 @@ impl Board {
                 BLACK => Ok(Score::checkmate_black()),
             };
         }
-        // else if self.stalemate(self.color_to_move)? {
-        //     debug!("Found stalemate");
-        //     return Ok(Score::ZERO);
-        // }
 
         let white_value: i32 = self
             .all_pieces_of_color(WHITE)
