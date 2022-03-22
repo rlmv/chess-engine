@@ -650,7 +650,7 @@ impl Board {
             moves.push(Move::CastleQueenside)
         };
 
-        moves.sort_by_cached_key(|mv| match mv {
+        moves.sort_by_key(|mv| match mv {
             Move::Promote {
                 from: _,
                 to,
@@ -940,6 +940,7 @@ impl Board {
             .filter(move |(piece, _)| piece.color() == color)
     }
 
+    // TODO: remove. Only kept for testing
     pub fn find_next_move(&self, depth: u8) -> Result<Option<(Move, Score)>> {
         let (mv, score, _, _) = self.find_best_move(depth)?;
         Ok(mv.map(|m| (m, score)))
