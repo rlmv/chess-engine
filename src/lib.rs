@@ -8,5 +8,6 @@ pub mod file;
 pub mod mv;
 pub mod rank;
 pub mod square;
+pub mod traversal_path;
 pub mod uci;
 pub mod vector;
