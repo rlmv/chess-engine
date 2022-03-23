@@ -102,6 +102,33 @@ impl CastleRights {
 }
 
 #[derive(Clone, Eq, PartialEq, Debug, Hash)]
+struct Presence {
+    color: Color,
+    pawn: PawnPresenceBitboard,
+    knight: Bitboard,
+    bishop: Bitboard,
+    rook: Bitboard,
+    queen: Bitboard,
+    king: Bitboard,
+    all: Bitboard,
+}
+
+impl Presence {
+    pub fn empty(color: Color) -> Self {
+        Self {
+            color: color,
+            pawn: PawnPresenceBitboard::empty(color),
+            knight: Bitboard::empty(),
+            bishop: Bitboard::empty(),
+            rook: Bitboard::empty(),
+            queen: Bitboard::empty(),
+            king: Bitboard::empty(),
+            all: Bitboard::empty(),
+        }
+    }
+}
+
+#[derive(Clone, Eq, PartialEq, Debug, Hash)]
 pub struct Board {
     board: [Option<Piece>; 64],
     pub color_to_move: Color,
@@ -112,11 +139,8 @@ pub struct Board {
     fullmove_clock: u16,
     can_castle: CastleRights,
 
-    presence_white: Bitboard,
-    presence_black: Bitboard,
-    pawn_presence_white: PawnPresenceBitboard,
-    pawn_presence_black: PawnPresenceBitboard,
-    pieces: Vec<(Piece, Square)>,
+    presence_white: Presence,
+    presence_black: Presence,
 }
 
 impl Board {
@@ -128,11 +152,15 @@ impl Board {
             halfmove_clock: 0,
             fullmove_clock: 1,
             can_castle: CastleRights::none(),
-            presence_white: Bitboard::empty(),
-            presence_black: Bitboard::empty(),
-            pawn_presence_white: PawnPresenceBitboard::empty(WHITE),
-            pawn_presence_black: PawnPresenceBitboard::empty(BLACK),
-            pieces: Vec::new(),
+            presence_white: Presence::empty(WHITE),
+            presence_black: Presence::empty(BLACK),
+        }
+    }
+
+    fn presence_for(&self, color: Color) -> &Presence {
+        match color {
+            WHITE => &self.presence_white,
+            BLACK => &self.presence_black,
         }
     }
 
@@ -208,42 +236,31 @@ impl Board {
     }
 
     fn update_bitboards(&mut self) -> Result<()> {
-        // Cache location of pieces.
-        // TODO: only use a sparse representation like this? HashMap?
-        self.pieces.clear();
-        self.pieces.extend(
-            self.board
-                .iter()
-                .enumerate()
-                .filter_map(move |(i, p)| p.map(|piece| (piece, Square::from_index(i)))),
-        );
+        let mut presence_white = Presence::empty(WHITE);
+        let mut presence_black = Presence::empty(BLACK);
 
-        let mut pawn_presence_white = PawnPresenceBitboard::empty(WHITE);
-        let mut pawn_presence_black = PawnPresenceBitboard::empty(BLACK);
+        for (piece, square) in self
+            .board
+            .iter()
+            .enumerate()
+            .filter_map(move |(i, p)| p.map(|piece| (piece, Square::from_index(i))))
+        {
+            let mut presence = match piece.color() {
+                WHITE => &mut presence_white,
+                BLACK => &mut presence_black,
+            };
 
-        let mut presence_white = Bitboard::empty();
-        let mut presence_black = Bitboard::empty();
-
-        for &(piece, square) in self.all_pieces() {
-            match piece.color() {
-                WHITE => {
-                    if piece.piece() == PAWN {
-                        pawn_presence_white = pawn_presence_white.set(square)
-                    }
-                    presence_white = presence_white.set(square)
-                }
-                BLACK => {
-                    if piece.piece() == PAWN {
-                        pawn_presence_black = pawn_presence_black.set(square)
-                    }
-                    presence_black = presence_black.set(square)
-                }
+            match piece.piece() {
+                PAWN => presence.pawn = presence.pawn.set(square),
+                KNIGHT => presence.knight = presence.knight.set(square),
+                BISHOP => presence.bishop = presence.bishop.set(square),
+                ROOK => presence.rook = presence.rook.set(square),
+                QUEEN => presence.queen = presence.queen.set(square),
+                KING => presence.king = presence.king.set(square),
             }
+
+            presence.all = presence.all.set(square)
         }
-
-        self.pawn_presence_white = pawn_presence_white;
-        self.pawn_presence_black = pawn_presence_black;
-
         self.presence_white = presence_white;
         self.presence_black = presence_black;
 
@@ -523,23 +540,21 @@ impl Board {
     }
 
     fn is_in_check(&self, color: Color) -> Result<bool> {
-        let mut kings = self
-            .all_pieces_of_color(color)
-            .filter(|(p, _)| p.piece() == KING);
+        let mut king_squares = self.presence_for(color).king.squares();
 
-        let &(king, king_square) = kings.next().ok_or(IllegalState(format!(
+        let king_square = king_squares.next().ok_or(IllegalState(format!(
             "Board is missing KING of color {}",
             color
         )))?;
 
-        if kings.next().is_some() {
+        if king_squares.next().is_some() {
             return Err(IllegalState(format!(
                 "Board has more than on KING of color {}",
                 color
             )));
         }
 
-        self.attacked_by_color(king_square, king.color().opposite())
+        self.attacked_by_color(king_square, color.opposite())
     }
 
     // attacking moves is a subset of other moves -
@@ -547,7 +562,7 @@ impl Board {
     fn attacked_by_color(&self, target_square: Square, color: Color) -> Result<bool> {
         let target_bitboard = Bitboard::empty().set(target_square);
 
-        for &(p, from) in self.all_pieces_of_color(color) {
+        for (p, from) in self.all_pieces_of_color(color) {
             if p.piece() == PAWN {
                 let pawn = PawnPresenceBitboard::empty(p.color()).set(from);
 
@@ -582,31 +597,56 @@ impl Board {
 
     // Return all candidate moves for single pieces, allowing illegal moves
     // (e.g., that move the king into check)
-    fn candidate_moves(&self, from: Square) -> Result<Vec<Move>> {
+    fn candidate_moves(&self, color: Color) -> Result<Vec<Move>> {
         // TODO: check color, turn
 
-        let target_moves = match self.board[from.index()] {
-            None => Err(NoPieceOnFromSquare(from))?,
-            Some(p) if p.piece() == PAWN => self._pawn_moves(from, &p),
-            Some(p) if p.piece() == KNIGHT => {
-                cross_product(from, self._knight_attacks(from, &p).squares().collect())
-            }
-            Some(p) if p.piece() == BISHOP => {
-                cross_product(from, self._bishop_attacks(from, &p).squares().collect())
-            }
-            Some(p) if p.piece() == ROOK => {
-                cross_product(from, self._rook_attacks(from, &p).squares().collect())
-            }
-            Some(p) if p.piece() == QUEEN => {
-                cross_product(from, self._queen_attacks(from, &p).squares().collect())
-            }
-            Some(p) if p.piece() == KING => {
-                cross_product(from, self._king_attacks(from, &p).squares().collect())
-            }
-            _ => Err(NotImplemented)?,
-        };
+        let mut moves: Vec<Move> = Vec::new();
 
-        Ok(target_moves)
+        for (from, attacks) in self.all_bishop_attacks(color) {
+            moves.extend(
+                attacks
+                    .squares()
+                    .map(|to| Move::Single { from: from, to: to }),
+            )
+        }
+
+        for (from, attacks) in self.all_knight_attacks(color) {
+            moves.extend(
+                attacks
+                    .squares()
+                    .map(|to| Move::Single { from: from, to: to }),
+            )
+        }
+
+        for (from, attacks) in self.all_rook_attacks(color) {
+            moves.extend(
+                attacks
+                    .squares()
+                    .map(|to| Move::Single { from: from, to: to }),
+            )
+        }
+
+        for (from, attacks) in self.all_queen_attacks(color) {
+            moves.extend(
+                attacks
+                    .squares()
+                    .map(|to| Move::Single { from: from, to: to }),
+            )
+        }
+
+        for (from, attacks) in self.all_king_attacks(color) {
+            moves.extend(
+                attacks
+                    .squares()
+                    .map(|to| Move::Single { from: from, to: to }),
+            )
+        }
+
+        for from in self.presence_for(color).pawn.b.squares() {
+            moves.extend(self._pawn_moves(from, &Piece(PAWN, color)))
+        }
+
+        Ok(moves)
     }
 
     // Return all legal moves for the given square, filtering out those that result in
@@ -620,7 +660,24 @@ impl Board {
 
         let mut moves = Vec::new();
 
-        for mv in self.candidate_moves(from)?.into_iter() {
+        let Piece(piece, color) = self
+            .piece_on_square(from)
+            .ok_or(NoPieceOnFromSquare(from))?;
+
+        for mv in self.candidate_moves(color)?.into_iter() {
+            match mv {
+                Move::Promote {
+                    from: source,
+                    to: _,
+                    piece: _,
+                }
+                | Move::Single {
+                    from: source,
+                    to: _,
+                } if from == source => (),
+                _ => continue,
+            }
+
             let moved_board = self.make_move(mv)?;
             // Cannot move into check
             if !moved_board.is_in_check(self.color_to_move)? {
@@ -633,14 +690,7 @@ impl Board {
 
     // Return all legal moves possible for the given color, including castling and promotion
     fn all_moves(&self, color: Color) -> Result<Vec<Move>> {
-        let mut moves: Vec<Move> = self
-            .all_pieces_of_color(color) // TODO: self.color_to_move?
-            .flat_map(move |(_, square)| {
-                self.candidate_moves(*square)
-                    .unwrap() // TODO fix this
-                    .into_iter()
-            })
-            .collect();
+        let mut moves: Vec<Move> = self.candidate_moves(color)?;
 
         if self.can_castle_kingside(color)? {
             moves.push(Move::CastleKingside);
@@ -749,7 +799,7 @@ impl Board {
                 BLACK => this_piece.b.south_by(magnitude),
             };
 
-            let not_blocked = moved_forward & !(self.presence_black | self.presence_white);
+            let not_blocked = moved_forward & !(self.presence_black.all | self.presence_white.all);
 
             // NOTE: only works because dealing with one pawn:
             match not_blocked.squares().next() {
@@ -772,8 +822,8 @@ impl Board {
             .unwrap_or(Bitboard::empty());
 
         let captures = match pawn.color() {
-            WHITE => this_piece.attacks() & (self.presence_black | en_passant_target),
-            BLACK => this_piece.attacks() & (self.presence_white | en_passant_target),
+            WHITE => this_piece.attacks() & (self.presence_black.all | en_passant_target),
+            BLACK => this_piece.attacks() & (self.presence_white.all | en_passant_target),
         };
 
         for target in captures.squares() {
@@ -793,27 +843,47 @@ impl Board {
         moves
     }
 
+    fn all_king_attacks<'a>(
+        &'a self,
+        color: Color,
+    ) -> impl Iterator<Item = (Square, Bitboard)> + 'a {
+        self.presence_for(color)
+            .king
+            .squares()
+            .map(move |from| (from, self._king_attacks(from, &Piece(KING, color))))
+    }
+
     // Note: does not exclude moves that put the king in check
     fn _king_attacks(&self, from: Square, king: &Piece) -> Bitboard {
         let attacks = PRECOMPUTED_BITBOARDS.king_moves[from.index()];
 
         let same_color = match king.color() {
-            WHITE => self.presence_white,
-            BLACK => self.presence_black,
+            WHITE => self.presence_white.all,
+            BLACK => self.presence_black.all,
         };
 
         attacks & !same_color
     }
 
+    fn all_rook_attacks<'a>(
+        &'a self,
+        color: Color,
+    ) -> impl Iterator<Item = (Square, Bitboard)> + 'a {
+        self.presence_for(color)
+            .rook
+            .squares()
+            .map(move |from| (from, self._rook_attacks(from, &Piece(ROOK, color))))
+    }
+
     fn _rook_attacks(&self, from: Square, rook: &Piece) -> Bitboard {
         let same_color = match rook.color() {
-            WHITE => self.presence_white,
-            BLACK => self.presence_black,
+            WHITE => self.presence_white.all,
+            BLACK => self.presence_black.all,
         };
 
         let other_color = match rook.color() {
-            WHITE => self.presence_black,
-            BLACK => self.presence_white,
+            WHITE => self.presence_black.all,
+            BLACK => self.presence_white.all,
         };
 
         fn compute_attacks(
@@ -859,15 +929,25 @@ impl Board {
         )
     }
 
+    fn all_bishop_attacks<'a>(
+        &'a self,
+        color: Color,
+    ) -> impl Iterator<Item = (Square, Bitboard)> + 'a {
+        self.presence_for(color)
+            .bishop
+            .squares()
+            .map(move |from| (from, self._bishop_attacks(from, &Piece(BISHOP, color))))
+    }
+
     fn _bishop_attacks(&self, from: Square, bishop: &Piece) -> Bitboard {
         let same_color = match bishop.color() {
-            WHITE => self.presence_white,
-            BLACK => self.presence_black,
+            WHITE => self.presence_white.all,
+            BLACK => self.presence_black.all,
         };
 
         let other_color = match bishop.color() {
-            WHITE => self.presence_black,
-            BLACK => self.presence_white,
+            WHITE => self.presence_black.all,
+            BLACK => self.presence_white.all,
         };
 
         fn compute_attacks(
@@ -913,31 +993,82 @@ impl Board {
         )
     }
 
+    fn all_knight_attacks<'a>(
+        &'a self,
+        color: Color,
+    ) -> impl Iterator<Item = (Square, Bitboard)> + 'a {
+        self.presence_for(color)
+            .knight
+            .squares()
+            .map(move |from| (from, self._knight_attacks(from, &Piece(KNIGHT, color))))
+    }
+
     fn _knight_attacks<'a>(&'a self, from: Square, knight: &'a Piece) -> Bitboard {
         let attacks = PRECOMPUTED_BITBOARDS.knight_moves[from.index()];
 
         let same_color = match knight.color() {
-            WHITE => self.presence_white,
-            BLACK => self.presence_black,
+            WHITE => self.presence_white.all,
+            BLACK => self.presence_black.all,
         };
 
         attacks & !same_color
+    }
+
+    fn all_queen_attacks<'a>(
+        &'a self,
+        color: Color,
+    ) -> impl Iterator<Item = (Square, Bitboard)> + 'a {
+        self.presence_for(color)
+            .queen
+            .squares()
+            .map(move |from| (from, self._queen_attacks(from, &Piece(QUEEN, color))))
     }
 
     fn _queen_attacks(&self, from: Square, queen: &Piece) -> Bitboard {
         self._rook_attacks(from, queen) | self._bishop_attacks(from, queen)
     }
 
-    fn all_pieces<'a>(&'a self) -> impl Iterator<Item = &(Piece, Square)> + 'a {
-        self.pieces.iter()
-    }
-
     fn all_pieces_of_color<'a>(
         &'a self,
         color: Color,
-    ) -> impl Iterator<Item = &(Piece, Square)> + 'a {
-        self.all_pieces()
-            .filter(move |(piece, _)| piece.color() == color)
+    ) -> impl Iterator<Item = (Piece, Square)> + 'a {
+        let presence = self.presence_for(color);
+
+        presence
+            .pawn
+            .b
+            .squares()
+            .map(move |s| (Piece(PAWN, color), s))
+            .chain(
+                presence
+                    .knight
+                    .squares()
+                    .map(move |s| (Piece(KNIGHT, color), s)),
+            )
+            .chain(
+                presence
+                    .bishop
+                    .squares()
+                    .map(move |s| (Piece(BISHOP, color), s)),
+            )
+            .chain(
+                presence
+                    .rook
+                    .squares()
+                    .map(move |s| (Piece(ROOK, color), s)),
+            )
+            .chain(
+                presence
+                    .queen
+                    .squares()
+                    .map(move |s| (Piece(QUEEN, color), s)),
+            )
+            .chain(
+                presence
+                    .king
+                    .squares()
+                    .map(move |s| (Piece(KING, color), s)),
+            )
     }
 
     // TODO: remove. Only kept for testing
@@ -1367,7 +1498,7 @@ fn test_king_obstructed_movement() {
         .place_piece(Piece(PAWN, WHITE), G3)
         .place_piece(Piece(PAWN, WHITE), F3)
         .place_piece(Piece(PAWN, WHITE), E2)
-        .place_piece(Piece(PAWN, WHITE), F1);
+        .place_piece(Piece(BISHOP, WHITE), F1);
 
     assert_eq!(
         sorted(board.legal_moves(F2).unwrap()),
@@ -2033,9 +2164,9 @@ fn test_avoid_stalemate() {
     assert_ne!(mv, Move::Single { from: D3, to: D8 });
 
     Puzzle::new(board)
-        .should_find_move(D3, D1)
+        .should_find_move(H5, A5)
         .respond_with(E6, E7)
-        .should_find_move(H5, E5)
+        .should_find_move(A5, E5)
         .should_be_checkmate();
 }
 
