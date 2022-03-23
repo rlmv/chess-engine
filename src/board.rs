@@ -1,8 +1,3 @@
-use core::cmp::Ordering;
-use log::{debug, info};
-use std::cmp;
-use std::fmt;
-
 use crate::bitboard::*;
 use crate::color::*;
 use crate::constants::*;
@@ -13,6 +8,11 @@ use crate::mv::*;
 use crate::rank::*;
 use crate::square::*;
 use crate::vector::*;
+use core::cmp::Ordering;
+use log::{debug, info};
+use std::cmp;
+use std::fmt;
+use std::rc::Rc;
 pub type Result<T> = std::result::Result<T, BoardError>;
 
 pub use PieceEnum::*;
@@ -1085,7 +1085,7 @@ impl Board {
         Ok(mv.map(|m| (m, score)))
     }
 
-    pub fn find_best_move(&self, depth: u8) -> Result<(Option<Move>, Score, Vec<Move>, u64)> {
+    pub fn find_best_move(&self, depth: u8) -> Result<(Option<Move>, Score, TraversalPath, u64)> {
         let (mv, score, path, node_count) =
             self._find_next_move(depth, &TraversalPath::head(), Score::MIN, Score::MAX)?;
 
@@ -1103,7 +1103,7 @@ impl Board {
         path: &TraversalPath,
         alpha_arg: Score,
         beta_arg: Score,
-    ) -> Result<(Option<Move>, Score, Vec<Move>, u64)> {
+    ) -> Result<(Option<Move>, Score, TraversalPath, u64)> {
         // Find all pieces
         // Generate all valid moves for those pieces.
         // After each move, must not be in check - prune.
@@ -1115,7 +1115,7 @@ impl Board {
 
         // Leaf node, we are done
         if depth == 0 {
-            return Ok((None, self.evaluate_position(path)?, path.into(), 1));
+            return Ok((None, self.evaluate_position(&path)?, path.clone(), 1));
         }
 
         let all_moves = self.all_moves(self.color_to_move)?;
@@ -1136,13 +1136,13 @@ impl Board {
             WHITE => Score::MIN,
             BLACK => Score::MAX,
         };
-        let mut best_path: Vec<Move> = path.into();
+        let mut best_path = path.clone();
 
         let mut node_count: u64 = 1; // number of nodes visited by all
 
         for mv in all_moves.iter() {
             let moved_board = self.make_move(*mv)?;
-            let moved_path = path.append(&mv);
+            let moved_path = path.append(*mv);
 
             debug!(
                 "{}: Evaluating move {} initial score={} α={} β={}",
@@ -1213,12 +1213,12 @@ impl Board {
             if self.is_in_check(self.color_to_move)? {
                 debug!("Position is checkmate for {}", self.color_to_move);
                 return match self.color_to_move {
-                    WHITE => Ok((None, Score::checkmate_white(), path.into(), 1)),
-                    BLACK => Ok((None, Score::checkmate_black(), path.into(), 1)),
+                    WHITE => Ok((None, Score::checkmate_white(), path.clone(), 1)),
+                    BLACK => Ok((None, Score::checkmate_black(), path.clone(), 1)),
                 };
             } else {
                 debug!("Position is stalemate");
-                return Ok((None, Score::ZERO, path.into(), 1));
+                return Ok((None, Score::ZERO, path.clone(), 1));
             }
         }
 
@@ -1356,30 +1356,50 @@ pub fn square_symbol(p: &Piece) -> String {
 
 // Linked list containing the current path to the root in the minimax tree
 // traversal
-#[derive(Debug, PartialEq, Eq)]
-enum TraversalPath<'a> {
-    Head,
-    Node(&'a TraversalPath<'a>, &'a Move),
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct TraversalPath {
+    list: Rc<TraversalPathElem>,
 }
 
-impl<'a> TraversalPath<'a> {
+impl TraversalPath {
     fn head() -> Self {
-        TraversalPath::Head
+        TraversalPath {
+            list: Rc::new(TraversalPathElem::Head),
+        }
     }
 
-    fn append(&'a self, mv: &'a Move) -> Self {
-        TraversalPath::Node(self, mv)
+    fn append(&self, mv: Move) -> Self {
+        TraversalPath {
+            list: Rc::new(TraversalPathElem::Node(Rc::clone(&self.list), mv)),
+        }
     }
 
     fn fold_left<T>(&self, zero: T, f: fn(accum: T, mv: &Move) -> T) -> T {
+        self.list.fold_left(zero, f)
+    }
+
+    fn len(&self) -> usize {
+        self.fold_left(0, |sum, _| sum + 1)
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum TraversalPathElem {
+    Head,
+    Node(Rc<TraversalPathElem>, Move),
+}
+
+impl TraversalPathElem {
+    fn fold_left<T>(&self, zero: T, f: fn(accum: T, mv: &Move) -> T) -> T {
         match self {
-            TraversalPath::Head => zero,
-            TraversalPath::Node(next, mv) => f(next.fold_left(zero, f), mv),
+            TraversalPathElem::Head => zero,
+            TraversalPathElem::Node(next, mv) => f(next.fold_left(zero, f), mv),
         }
     }
 }
 
-impl Into<Vec<Move>> for &TraversalPath<'_> {
+impl Into<Vec<Move>> for &TraversalPath {
     fn into(self) -> Vec<Move> {
         self.fold_left(Vec::new(), |mut v, mv| {
             v.push(*mv);
@@ -1388,7 +1408,7 @@ impl Into<Vec<Move>> for &TraversalPath<'_> {
     }
 }
 
-impl fmt::Display for TraversalPath<'_> {
+impl fmt::Display for TraversalPath {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = self.fold_left(String::new(), |mut accum, mv| {
             accum.extend(mv.to_string().chars());
