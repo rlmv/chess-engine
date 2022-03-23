@@ -556,7 +556,7 @@ impl Board {
         Ok(self.attacked_by_color(king_square, color.opposite()))
     }
 
-    // attacking moves is a subset of other moves -
+    // Attacking moves are a subset of other moves.
 
     fn attacked_by_color(&self, target_square: Square, color: Color) -> bool {
         let target_bitboard = Bitboard::empty().set(target_square);
