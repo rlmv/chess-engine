@@ -542,10 +542,9 @@ impl Board {
     fn is_in_check(&self, color: Color) -> Result<bool> {
         let mut king_squares = self.presence_for(color).king.squares();
 
-        let king_square = king_squares.next().ok_or(IllegalState(format!(
-            "Board is missing KING of color {}",
-            color
-        )))?;
+        let king_square = king_squares
+            .next()
+            .ok_or_else(|| IllegalState(format!("Board is missing KING of color {}", color)))?;
 
         if king_squares.next().is_some() {
             return Err(IllegalState(format!(
