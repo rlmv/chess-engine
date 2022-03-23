@@ -594,26 +594,40 @@ impl Board {
             )
         }
 
-        for (piece, from) in self.all_pieces_of_color(color) {
-            let target_moves = match self.board[from.index()] {
-                None => Err(NoPieceOnFromSquare(from))?,
-                Some(p) if p.piece() == PAWN => self._pawn_moves(from, &p),
-                Some(p) if p.piece() == KNIGHT => {
-                    cross_product(from, self._knight_attacks(from, &p).squares().collect())
-                }
-                Some(p) if p.piece() == ROOK => {
-                    cross_product(from, self._rook_attacks(from, &p).squares().collect())
-                }
-                Some(p) if p.piece() == QUEEN => {
-                    cross_product(from, self._queen_attacks(from, &p).squares().collect())
-                }
-                Some(p) if p.piece() == KING => {
-                    cross_product(from, self._king_attacks(from, &p).squares().collect())
-                }
-                _ => Vec::new(),
-            };
+        for (from, attacks) in self.all_knight_attacks(color) {
+            moves.extend(
+                attacks
+                    .squares()
+                    .map(|to| Move::Single { from: from, to: to }),
+            )
+        }
 
-            moves.extend(target_moves)
+        for (from, attacks) in self.all_rook_attacks(color) {
+            moves.extend(
+                attacks
+                    .squares()
+                    .map(|to| Move::Single { from: from, to: to }),
+            )
+        }
+
+        for (from, attacks) in self.all_queen_attacks(color) {
+            moves.extend(
+                attacks
+                    .squares()
+                    .map(|to| Move::Single { from: from, to: to }),
+            )
+        }
+
+        for (from, attacks) in self.all_king_attacks(color) {
+            moves.extend(
+                attacks
+                    .squares()
+                    .map(|to| Move::Single { from: from, to: to }),
+            )
+        }
+
+        for from in self.presence_for(color).pawn.b.squares() {
+            moves.extend(self._pawn_moves(from, &Piece(PAWN, color)))
         }
 
         Ok(moves)
@@ -809,6 +823,16 @@ impl Board {
         moves
     }
 
+    fn all_king_attacks<'a>(
+        &'a self,
+        color: Color,
+    ) -> impl Iterator<Item = (Square, Bitboard)> + 'a {
+        self.presence_for(color)
+            .king
+            .squares()
+            .map(move |from| (from, self._king_attacks(from, &Piece(KING, color))))
+    }
+
     // Note: does not exclude moves that put the king in check
     fn _king_attacks(&self, from: Square, king: &Piece) -> Bitboard {
         let attacks = PRECOMPUTED_BITBOARDS.king_moves[from.index()];
@@ -819,6 +843,16 @@ impl Board {
         };
 
         attacks & !same_color
+    }
+
+    fn all_rook_attacks<'a>(
+        &'a self,
+        color: Color,
+    ) -> impl Iterator<Item = (Square, Bitboard)> + 'a {
+        self.presence_for(color)
+            .rook
+            .squares()
+            .map(move |from| (from, self._rook_attacks(from, &Piece(ROOK, color))))
     }
 
     fn _rook_attacks(&self, from: Square, rook: &Piece) -> Bitboard {
@@ -939,6 +973,16 @@ impl Board {
         )
     }
 
+    fn all_knight_attacks<'a>(
+        &'a self,
+        color: Color,
+    ) -> impl Iterator<Item = (Square, Bitboard)> + 'a {
+        self.presence_for(color)
+            .knight
+            .squares()
+            .map(move |from| (from, self._knight_attacks(from, &Piece(KNIGHT, color))))
+    }
+
     fn _knight_attacks<'a>(&'a self, from: Square, knight: &'a Piece) -> Bitboard {
         let attacks = PRECOMPUTED_BITBOARDS.knight_moves[from.index()];
 
@@ -948,6 +992,16 @@ impl Board {
         };
 
         attacks & !same_color
+    }
+
+    fn all_queen_attacks<'a>(
+        &'a self,
+        color: Color,
+    ) -> impl Iterator<Item = (Square, Bitboard)> + 'a {
+        self.presence_for(color)
+            .queen
+            .squares()
+            .map(move |from| (from, self._queen_attacks(from, &Piece(QUEEN, color))))
     }
 
     fn _queen_attacks(&self, from: Square, queen: &Piece) -> Bitboard {
