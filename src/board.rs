@@ -388,17 +388,17 @@ impl Board {
                 self.can_castle.kingside_white
                     && self.is_empty(F1.index())
                     && self.is_empty(G1.index())
-                    && !self.attacked_by_color(E1, color.opposite())?
-                    && !self.attacked_by_color(F1, color.opposite())?
-                    && !self.attacked_by_color(G1, color.opposite())?
+                    && !self.attacked_by_color(E1, color.opposite())
+                    && !self.attacked_by_color(F1, color.opposite())
+                    && !self.attacked_by_color(G1, color.opposite())
             }
             Color::BLACK => {
                 self.can_castle.kingside_black
                     && self.is_empty(F8.index())
                     && self.is_empty(G8.index())
-                    && !self.attacked_by_color(E8, color.opposite())?
-                    && !self.attacked_by_color(F8, color.opposite())?
-                    && !self.attacked_by_color(G8, color.opposite())?
+                    && !self.attacked_by_color(E8, color.opposite())
+                    && !self.attacked_by_color(F8, color.opposite())
+                    && !self.attacked_by_color(G8, color.opposite())
             }
         };
 
@@ -412,18 +412,18 @@ impl Board {
                     && self.is_empty(B1.index())
                     && self.is_empty(C1.index())
                     && self.is_empty(D1.index())
-                    && !self.attacked_by_color(C1, color.opposite())?
-                    && !self.attacked_by_color(D1, color.opposite())?
-                    && !self.attacked_by_color(E1, color.opposite())?
+                    && !self.attacked_by_color(C1, color.opposite())
+                    && !self.attacked_by_color(D1, color.opposite())
+                    && !self.attacked_by_color(E1, color.opposite())
             }
             Color::BLACK => {
                 self.can_castle.queenside_black
                     && self.is_empty(B8.index())
                     && self.is_empty(C8.index())
                     && self.is_empty(D8.index())
-                    && !self.attacked_by_color(C8, color.opposite())?
-                    && !self.attacked_by_color(D8, color.opposite())?
-                    && !self.attacked_by_color(E8, color.opposite())?
+                    && !self.attacked_by_color(C8, color.opposite())
+                    && !self.attacked_by_color(D8, color.opposite())
+                    && !self.attacked_by_color(E8, color.opposite())
             }
         };
 
@@ -553,41 +553,41 @@ impl Board {
             )));
         }
 
-        self.attacked_by_color(king_square, color.opposite())
+        Ok(self.attacked_by_color(king_square, color.opposite()))
     }
 
     // attacking moves is a subset of other moves -
 
-    fn attacked_by_color(&self, target_square: Square, color: Color) -> Result<bool> {
+    fn attacked_by_color(&self, target_square: Square, color: Color) -> bool {
         let target_bitboard = Bitboard::empty().set(target_square);
 
         for (_, attacks) in self.all_queen_attacks(color) {
             if (attacks & target_bitboard).non_empty() {
-                return Ok(true);
+                return true;
             }
         }
 
         for (_, attacks) in self.all_bishop_attacks(color) {
             if (attacks & target_bitboard).non_empty() {
-                return Ok(true);
+                return true;
             }
         }
 
         for (_, attacks) in self.all_rook_attacks(color) {
             if (attacks & target_bitboard).non_empty() {
-                return Ok(true);
+                return true;
             }
         }
 
         for (_, attacks) in self.all_knight_attacks(color) {
             if (attacks & target_bitboard).non_empty() {
-                return Ok(true);
+                return true;
             }
         }
 
         for (_, attacks) in self.all_king_attacks(color) {
             if (attacks & target_bitboard).non_empty() {
-                return Ok(true);
+                return true;
             }
         }
 
@@ -595,11 +595,11 @@ impl Board {
             let pawn = PawnPresenceBitboard::empty(color).set(pawn_square);
 
             if (pawn.attacks() & target_bitboard).non_empty() {
-                return Ok(true);
+                return true;
             }
         }
 
-        Ok(false)
+        false
     }
 
     // Return all candidate moves for single pieces, allowing illegal moves
