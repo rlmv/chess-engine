@@ -11,7 +11,7 @@ profile: release
 
 # Great tutorial: http://sandsoftwaresound.net/perf/perf-tutorial-hot-spots/
 perf: release
-	LOG_LEVEL=INFO LOG_STDOUT=TRUE sudo perf record -e cpu-clock,faults,cache-misses ./target/release/chess-engine  fen "r1bqkbnr/ppp2ppp/2np4/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 0 3" 8
+	LOG_LEVEL=INFO LOG_STDOUT=TRUE sudo perf record -e task-clock,cpu-clock,faults,cache-misses ./target/release/chess-engine  fen "r1bqkbnr/ppp2ppp/2np4/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 0 3" 8
 	sudo chown bo:bo perf.data
 
 perf-flamegraph: release

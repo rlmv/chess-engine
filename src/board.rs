@@ -607,7 +607,10 @@ impl Board {
     fn candidate_moves(&self, color: Color) -> impl Iterator<Item = Move> + '_ {
         // TODO: check color, turn
 
-        self.all_bishop_attacks(color)
+        // attacking moves
+
+        let attacking_moves = self
+            .all_bishop_attacks(color)
             .chain(self.all_rook_attacks(color))
             .chain(self.all_knight_attacks(color))
             .chain(self.all_queen_attacks(color))
@@ -620,6 +623,25 @@ impl Board {
                     .squares()
                     .flat_map(move |from| self._pawn_moves(from, &Piece(PAWN, color))),
             )
+            .filter(|mv| self.is_capture(*mv).unwrap());
+
+        let non_attacking_moves = self
+            .all_bishop_attacks(color)
+            .chain(self.all_rook_attacks(color))
+            .chain(self.all_knight_attacks(color))
+            .chain(self.all_queen_attacks(color))
+            .chain(self.all_king_attacks(color))
+            .flat_map(|(from, attacks)| attacks.squares().map(move |to| Move::Single { from, to }))
+            .chain(
+                self.presence_for(color)
+                    .pawn
+                    .b
+                    .squares()
+                    .flat_map(move |from| self._pawn_moves(from, &Piece(PAWN, color))),
+            )
+            .filter(|mv| !self.is_capture(*mv).unwrap());
+
+        attacking_moves.chain(non_attacking_moves)
     }
 
     // Return all legal moves for the given square, filtering out those that result in
@@ -662,34 +684,19 @@ impl Board {
     }
 
     // Return all legal moves possible for the given color, including castling and promotion
-    fn all_moves(&self, color: Color) -> Result<Vec<Move>> {
-        let mut moves: Vec<Move> = self.candidate_moves(color).collect();
-
-        if self.can_castle_kingside(color)? {
-            moves.push(Move::CastleKingside);
-        };
-
-        if self.can_castle_queenside(color)? {
-            moves.push(Move::CastleQueenside)
-        };
-
-        moves.sort_by_key(|mv| match mv {
-            Move::Promote {
-                from: _,
-                to,
-                piece: _,
-            } => 1,
-            Move::Single { from: _, to } if self.is_capture(*mv).unwrap() => {
-                // prioritize capturing larger pieces
-                1000000 - self.piece_on_square(*to).unwrap().value()
-            }
-
-            Move::CastleKingside => 1000001,
-            Move::CastleQueenside => 1000001,
-            Move::Single { from: _, to: _ } => 1000002,
-        });
-
-        Ok(moves)
+    fn all_moves(&self, color: Color) -> Result<impl Iterator<Item = Move> + '_> {
+        Ok(self
+            .candidate_moves(color)
+            .chain(if self.can_castle_kingside(color)? {
+                vec![Move::CastleKingside].into_iter()
+            } else {
+                Vec::new().into_iter()
+            })
+            .chain(if self.can_castle_queenside(color)? {
+                vec![Move::CastleQueenside].into_iter()
+            } else {
+                Vec::new().into_iter()
+            }))
     }
 
     pub fn plus_vector(s: &Square, v: &MoveVector) -> Option<Square> {
@@ -1084,19 +1091,6 @@ impl Board {
             return Ok((None, self.evaluate_position(&path)?, path.clone(), 1));
         }
 
-        let all_moves = self.all_moves(self.color_to_move)?;
-
-        debug!(
-            "{}: {}: All moves for position: {}",
-            self.color_to_move,
-            path,
-            all_moves
-                .iter()
-                .map(|mv| mv.to_string())
-                .collect::<Vec<String>>()
-                .join(", ")
-        );
-
         let mut best_move: Option<Move> = None;
         let mut best_score = match self.color_to_move {
             WHITE => Score::MIN,
@@ -1106,9 +1100,9 @@ impl Board {
 
         let mut node_count: u64 = 1; // number of nodes visited by all
 
-        for mv in all_moves.iter() {
-            let moved_board = self.make_move(*mv)?;
-            let moved_path = path.append(*mv);
+        for mv in self.all_moves(self.color_to_move)? {
+            let moved_board = self.make_move(mv)?;
+            let moved_path = path.append(mv);
 
             debug!(
                 "{}: Evaluating move {} initial score={} α={} β={}",
@@ -1147,7 +1141,7 @@ impl Board {
                         || (score == best_score && mainline.len() < best_path.len())
                     {
                         best_score = score;
-                        best_move = Some(*mv);
+                        best_move = Some(mv);
                         best_path = mainline.clone();
                     }
                 }
@@ -1157,7 +1151,7 @@ impl Board {
                         || (score == best_score && mainline.len() < best_path.len())
                     {
                         best_score = score;
-                        best_move = Some(*mv);
+                        best_move = Some(mv);
                         best_path = mainline.clone();
                     }
                 }
@@ -1170,7 +1164,7 @@ impl Board {
 
             if alpha >= beta {
                 debug!("Found α={} >= β={}. Pruning rest of node.", alpha, beta);
-                return Ok((Some(*mv), score, mainline, node_count));
+                return Ok((Some(mv), score, mainline, node_count));
             }
         }
 
@@ -1248,8 +1242,8 @@ impl Board {
 
         debug!("{}: In check. Evaluating for checkmate", color);
 
-        for mv in self.all_moves(color)?.iter() {
-            let moved_board = self.make_move(*mv)?;
+        for mv in self.all_moves(color)? {
+            let moved_board = self.make_move(mv)?;
 
             // At least one way out!
             if !moved_board.is_in_check(color)? {
@@ -1269,8 +1263,8 @@ impl Board {
 
         debug!("{}: Evaluating for stalemate", color);
 
-        for mv in self.all_moves(color)?.iter() {
-            let moved_board = self.make_move(*mv)?;
+        for mv in self.all_moves(color)? {
+            let moved_board = self.make_move(mv)?;
 
             // At least one move that avoids check
             if !moved_board.is_in_check(color)? {
@@ -1514,8 +1508,6 @@ fn test_castle_kingside_white() {
     assert!(board
         .all_moves(Color::WHITE)
         .unwrap()
-        .iter()
-        .map(|mv| *mv)
         .collect::<Vec<Move>>()
         .contains(&Move::CastleKingside));
 
@@ -1539,8 +1531,6 @@ fn test_castle_kingside_white_not_allowed_if_king_has_moved() {
     assert!(!board
         .all_moves(Color::WHITE)
         .unwrap()
-        .iter()
-        .map(|mv| *mv)
         .collect::<Vec<Move>>()
         .contains(&Move::CastleKingside));
 }
@@ -1557,8 +1547,6 @@ fn test_castle_kingside_white_not_allowed_if_e1_under_attack() {
     assert!(!board
         .all_moves(Color::WHITE)
         .unwrap()
-        .iter()
-        .map(|mv| *mv)
         .collect::<Vec<Move>>()
         .contains(&Move::CastleKingside));
 }
@@ -1575,8 +1563,6 @@ fn test_castle_kingside_white_not_allowed_if_f1_under_attack() {
     assert!(!board
         .all_moves(Color::WHITE)
         .unwrap()
-        .iter()
-        .map(|mv| *mv)
         .collect::<Vec<Move>>()
         .contains(&Move::CastleKingside));
 }
@@ -1593,8 +1579,6 @@ fn test_castle_kingside_white_not_allowed_if_g1_under_attack() {
     assert!(!board
         .all_moves(Color::WHITE)
         .unwrap()
-        .iter()
-        .map(|mv| *mv)
         .collect::<Vec<Move>>()
         .contains(&Move::CastleKingside));
 }
@@ -1610,8 +1594,6 @@ fn test_castle_queenside_white() {
     assert!(board
         .all_moves(Color::WHITE)
         .unwrap()
-        .iter()
-        .map(|mv| *mv)
         .collect::<Vec<Move>>()
         .contains(&Move::CastleQueenside));
 
@@ -1635,8 +1617,6 @@ fn test_castle_queenside_white_not_allowed_if_king_has_moved() {
     assert!(!board
         .all_moves(Color::WHITE)
         .unwrap()
-        .iter()
-        .map(|mv| *mv)
         .collect::<Vec<Move>>()
         .contains(&Move::CastleQueenside));
 }
@@ -1652,8 +1632,6 @@ fn test_castle_kingside_black() {
     assert!(board
         .all_moves(Color::BLACK)
         .unwrap()
-        .iter()
-        .map(|mv| *mv)
         .collect::<Vec<Move>>()
         .contains(&Move::CastleKingside));
 
@@ -1677,8 +1655,6 @@ fn test_castle_queenside_black() {
     assert!(board
         .all_moves(Color::BLACK)
         .unwrap()
-        .iter()
-        .map(|mv| *mv)
         .collect::<Vec<Move>>()
         .contains(&Move::CastleQueenside));
 
