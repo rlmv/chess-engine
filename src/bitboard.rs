@@ -151,7 +151,7 @@ impl Bitboard {
     /*
      * Return all set squares in the bitboard
      */
-    pub fn squares<'a>(&self) -> SquareIterator {
+    pub fn squares(&self) -> SquareIterator {
         SquareIterator::new(self)
     }
 
@@ -198,21 +198,21 @@ impl Bitboard {
     }
 }
 
-pub struct SquareIterator<'a> {
-    bitboard: &'a Bitboard,
+pub struct SquareIterator {
+    bitboard: Bitboard,
     offset: u32, // next index in bitboard to inspect
 }
 
-impl<'a> SquareIterator<'a> {
-    fn new(bitboard: &'a Bitboard) -> Self {
+impl SquareIterator {
+    fn new(bitboard: &Bitboard) -> Self {
         SquareIterator {
-            bitboard: bitboard,
+            bitboard: *bitboard,
             offset: 0,
         }
     }
 }
 
-impl<'a> Iterator for SquareIterator<'a> {
+impl<'a> Iterator for SquareIterator {
     type Item = Square;
 
     fn next(&mut self) -> Option<Self::Item> {

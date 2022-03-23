@@ -604,56 +604,22 @@ impl Board {
 
     // Return all candidate moves for single pieces, allowing illegal moves
     // (e.g., that move the king into check)
-    fn candidate_moves(&self, color: Color) -> Result<Vec<Move>> {
+    fn candidate_moves(&self, color: Color) -> impl Iterator<Item = Move> + '_ {
         // TODO: check color, turn
 
-        let mut moves: Vec<Move> = Vec::new();
-
-        for (from, attacks) in self.all_bishop_attacks(color) {
-            moves.extend(
-                attacks
+        self.all_bishop_attacks(color)
+            .chain(self.all_rook_attacks(color))
+            .chain(self.all_knight_attacks(color))
+            .chain(self.all_queen_attacks(color))
+            .chain(self.all_king_attacks(color))
+            .flat_map(|(from, attacks)| attacks.squares().map(move |to| Move::Single { from, to }))
+            .chain(
+                self.presence_for(color)
+                    .pawn
+                    .b
                     .squares()
-                    .map(|to| Move::Single { from: from, to: to }),
+                    .flat_map(move |from| self._pawn_moves(from, &Piece(PAWN, color))),
             )
-        }
-
-        for (from, attacks) in self.all_knight_attacks(color) {
-            moves.extend(
-                attacks
-                    .squares()
-                    .map(|to| Move::Single { from: from, to: to }),
-            )
-        }
-
-        for (from, attacks) in self.all_rook_attacks(color) {
-            moves.extend(
-                attacks
-                    .squares()
-                    .map(|to| Move::Single { from: from, to: to }),
-            )
-        }
-
-        for (from, attacks) in self.all_queen_attacks(color) {
-            moves.extend(
-                attacks
-                    .squares()
-                    .map(|to| Move::Single { from: from, to: to }),
-            )
-        }
-
-        for (from, attacks) in self.all_king_attacks(color) {
-            moves.extend(
-                attacks
-                    .squares()
-                    .map(|to| Move::Single { from: from, to: to }),
-            )
-        }
-
-        for from in self.presence_for(color).pawn.b.squares() {
-            moves.extend(self._pawn_moves(from, &Piece(PAWN, color)))
-        }
-
-        Ok(moves)
     }
 
     // Return all legal moves for the given square, filtering out those that result in
@@ -671,7 +637,7 @@ impl Board {
             .piece_on_square(from)
             .ok_or(NoPieceOnFromSquare(from))?;
 
-        for mv in self.candidate_moves(color)?.into_iter() {
+        for mv in self.candidate_moves(color) {
             match mv {
                 Move::Promote {
                     from: source,
@@ -697,7 +663,7 @@ impl Board {
 
     // Return all legal moves possible for the given color, including castling and promotion
     fn all_moves(&self, color: Color) -> Result<Vec<Move>> {
-        let mut moves: Vec<Move> = self.candidate_moves(color)?;
+        let mut moves: Vec<Move> = self.candidate_moves(color).collect();
 
         if self.can_castle_kingside(color)? {
             moves.push(Move::CastleKingside);
