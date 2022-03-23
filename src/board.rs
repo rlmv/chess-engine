@@ -520,23 +520,21 @@ impl Board {
     }
 
     fn is_in_check(&self, color: Color) -> Result<bool> {
-        let mut kings = self
-            .all_pieces_of_color(color)
-            .filter(|(p, _)| p.piece() == KING);
+        let mut king_squares = self.presence_for(color).king.squares();
 
-        let (king, king_square) = kings.next().ok_or(IllegalState(format!(
+        let king_square = king_squares.next().ok_or(IllegalState(format!(
             "Board is missing KING of color {}",
             color
         )))?;
 
-        if kings.next().is_some() {
+        if king_squares.next().is_some() {
             return Err(IllegalState(format!(
                 "Board has more than on KING of color {}",
                 color
             )));
         }
 
-        self.attacked_by_color(king_square, king.color().opposite())
+        self.attacked_by_color(king_square, color.opposite())
     }
 
     // attacking moves is a subset of other moves -
@@ -1012,10 +1010,7 @@ impl Board {
         &'a self,
         color: Color,
     ) -> impl Iterator<Item = (Piece, Square)> + 'a {
-        let presence = match color {
-            WHITE => &self.presence_white,
-            BLACK => &self.presence_black,
-        };
+        let presence = self.presence_for(color);
 
         presence
             .pawn
