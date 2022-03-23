@@ -159,6 +159,13 @@ impl Board {
         }
     }
 
+    fn presence_for(&self, color: Color) -> &Presence {
+        match color {
+            WHITE => &self.presence_white,
+            BLACK => &self.presence_black,
+        }
+    }
+
     pub fn with_color_to_move(&self, color: Color) -> Self {
         let mut new = self.clone();
         new.color_to_move = color;
@@ -574,31 +581,42 @@ impl Board {
 
     // Return all candidate moves for single pieces, allowing illegal moves
     // (e.g., that move the king into check)
-    fn candidate_moves(&self, from: Square) -> Result<Vec<Move>> {
+    fn candidate_moves(&self, color: Color) -> Result<Vec<Move>> {
         // TODO: check color, turn
 
-        let target_moves = match self.board[from.index()] {
-            None => Err(NoPieceOnFromSquare(from))?,
-            Some(p) if p.piece() == PAWN => self._pawn_moves(from, &p),
-            Some(p) if p.piece() == KNIGHT => {
-                cross_product(from, self._knight_attacks(from, &p).squares().collect())
-            }
-            Some(p) if p.piece() == BISHOP => {
-                cross_product(from, self._bishop_attacks(from, &p).squares().collect())
-            }
-            Some(p) if p.piece() == ROOK => {
-                cross_product(from, self._rook_attacks(from, &p).squares().collect())
-            }
-            Some(p) if p.piece() == QUEEN => {
-                cross_product(from, self._queen_attacks(from, &p).squares().collect())
-            }
-            Some(p) if p.piece() == KING => {
-                cross_product(from, self._king_attacks(from, &p).squares().collect())
-            }
-            _ => Err(NotImplemented)?,
-        };
+        let mut moves: Vec<Move> = Vec::new();
 
-        Ok(target_moves)
+        for (from, attacks) in self.all_bishop_attacks(color) {
+            moves.extend(
+                attacks
+                    .squares()
+                    .map(|to| Move::Single { from: from, to: to }),
+            )
+        }
+
+        for (piece, from) in self.all_pieces_of_color(color) {
+            let target_moves = match self.board[from.index()] {
+                None => Err(NoPieceOnFromSquare(from))?,
+                Some(p) if p.piece() == PAWN => self._pawn_moves(from, &p),
+                Some(p) if p.piece() == KNIGHT => {
+                    cross_product(from, self._knight_attacks(from, &p).squares().collect())
+                }
+                Some(p) if p.piece() == ROOK => {
+                    cross_product(from, self._rook_attacks(from, &p).squares().collect())
+                }
+                Some(p) if p.piece() == QUEEN => {
+                    cross_product(from, self._queen_attacks(from, &p).squares().collect())
+                }
+                Some(p) if p.piece() == KING => {
+                    cross_product(from, self._king_attacks(from, &p).squares().collect())
+                }
+                _ => Vec::new(),
+            };
+
+            moves.extend(target_moves)
+        }
+
+        Ok(moves)
     }
 
     // Return all legal moves for the given square, filtering out those that result in
@@ -612,7 +630,24 @@ impl Board {
 
         let mut moves = Vec::new();
 
-        for mv in self.candidate_moves(from)?.into_iter() {
+        let Piece(piece, color) = self
+            .piece_on_square(from)
+            .ok_or(NoPieceOnFromSquare(from))?;
+
+        for mv in self.candidate_moves(color)?.into_iter() {
+            match mv {
+                Move::Promote {
+                    from: source,
+                    to: _,
+                    piece: _,
+                }
+                | Move::Single {
+                    from: source,
+                    to: _,
+                } if from == source => (),
+                _ => continue,
+            }
+
             let moved_board = self.make_move(mv)?;
             // Cannot move into check
             if !moved_board.is_in_check(self.color_to_move)? {
@@ -625,14 +660,7 @@ impl Board {
 
     // Return all legal moves possible for the given color, including castling and promotion
     fn all_moves(&self, color: Color) -> Result<Vec<Move>> {
-        let mut moves: Vec<Move> = self
-            .all_pieces_of_color(color) // TODO: self.color_to_move?
-            .flat_map(move |(_, square)| {
-                self.candidate_moves(square)
-                    .unwrap() // TODO fix this
-                    .into_iter()
-            })
-            .collect();
+        let mut moves: Vec<Move> = self.candidate_moves(color)?;
 
         if self.can_castle_kingside(color)? {
             moves.push(Move::CastleKingside);
@@ -845,6 +873,16 @@ impl Board {
             other_color,
             |b| b.bitscan_backward(),
         )
+    }
+
+    fn all_bishop_attacks<'a>(
+        &'a self,
+        color: Color,
+    ) -> impl Iterator<Item = (Square, Bitboard)> + 'a {
+        self.presence_for(color)
+            .bishop
+            .squares()
+            .map(move |from| (from, self._bishop_attacks(from, &Piece(BISHOP, color))))
     }
 
     fn _bishop_attacks(&self, from: Square, bishop: &Piece) -> Bitboard {
@@ -1386,7 +1424,7 @@ fn test_king_obstructed_movement() {
         .place_piece(Piece(PAWN, WHITE), G3)
         .place_piece(Piece(PAWN, WHITE), F3)
         .place_piece(Piece(PAWN, WHITE), E2)
-        .place_piece(Piece(PAWN, WHITE), F1);
+        .place_piece(Piece(BISHOP, WHITE), F1);
 
     assert_eq!(
         sorted(board.legal_moves(F2).unwrap()),
