@@ -561,32 +561,40 @@ impl Board {
     fn attacked_by_color(&self, target_square: Square, color: Color) -> Result<bool> {
         let target_bitboard = Bitboard::empty().set(target_square);
 
-        for (p, from) in self.all_pieces_of_color(color) {
-            if p.piece() == PAWN {
-                let pawn = PawnPresenceBitboard::empty(p.color()).set(from);
+        for (_, attacks) in self.all_queen_attacks(color) {
+            if (attacks & target_bitboard).non_empty() {
+                return Ok(true);
+            }
+        }
 
-                if !(pawn.attacks() & target_bitboard).is_empty() {
-                    return Ok(true);
-                }
-            } else if p.piece() == KNIGHT
-                && !(self._knight_attacks(from, &p) & target_bitboard).is_empty()
-            {
+        for (_, attacks) in self.all_bishop_attacks(color) {
+            if (attacks & target_bitboard).non_empty() {
                 return Ok(true);
-            } else if p.piece() == BISHOP
-                && !(self._bishop_attacks(from, &p) & target_bitboard).is_empty()
-            {
+            }
+        }
+
+        for (_, attacks) in self.all_rook_attacks(color) {
+            if (attacks & target_bitboard).non_empty() {
                 return Ok(true);
-            } else if p.piece() == ROOK
-                && !(self._rook_attacks(from, &p) & target_bitboard).is_empty()
-            {
+            }
+        }
+
+        for (_, attacks) in self.all_knight_attacks(color) {
+            if (attacks & target_bitboard).non_empty() {
                 return Ok(true);
-            } else if p.piece() == QUEEN
-                && !(self._queen_attacks(from, &p) & target_bitboard).is_empty()
-            {
+            }
+        }
+
+        for (_, attacks) in self.all_king_attacks(color) {
+            if (attacks & target_bitboard).non_empty() {
                 return Ok(true);
-            } else if p.piece() == KING
-                && !(self._king_attacks(from, &p) & target_bitboard).is_empty()
-            {
+            }
+        }
+
+        for pawn_square in self.presence_for(color).pawn.b.squares() {
+            let pawn = PawnPresenceBitboard::empty(color).set(pawn_square);
+
+            if (pawn.attacks() & target_bitboard).non_empty() {
                 return Ok(true);
             }
         }
@@ -714,6 +722,7 @@ impl Board {
             Move::CastleQueenside => 1000001,
             Move::Single { from: _, to: _ } => 1000002,
         });
+
         Ok(moves)
     }
 

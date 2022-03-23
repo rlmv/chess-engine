@@ -175,6 +175,10 @@ impl Bitboard {
         self.0 == 0
     }
 
+    pub fn non_empty(&self) -> bool {
+        self.0 != 0
+    }
+
     // least significant set bit
     pub fn bitscan_forward(&self) -> Option<Square> {
         if self.is_empty() {

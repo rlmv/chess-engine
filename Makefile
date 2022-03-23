@@ -6,7 +6,7 @@ release:
 	CARGO_PROFILE_RELEASE_DEBUG=true cargo build --release
 
 profile: release
-	sudo LOG_LEVEL=INFO LOG_STDOUT=TRUE /home/bo/.cargo/bin/flamegraph --output=${OUTPUT} ./target/release/chess-engine  fen "r1bqkbnr/ppp2ppp/2np4/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 0 3" 6
+	sudo LOG_LEVEL=INFO LOG_STDOUT=TRUE /home/bo/.cargo/bin/flamegraph --output=${OUTPUT} ./target/release/chess-engine  fen "r1bqkbnr/ppp2ppp/2np4/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 0 3" 8
 	firefox --new-tab file:///${PWD}/${OUTPUT}
 
 # Great tutorial: http://sandsoftwaresound.net/perf/perf-tutorial-hot-spots/
