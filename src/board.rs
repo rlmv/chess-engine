@@ -672,7 +672,7 @@ impl Board {
 
         let mut moves = Vec::new();
 
-        let Piece(piece, color) = self
+        let Piece(_, color) = self
             .piece_on_square(from)
             .ok_or(NoPieceOnFromSquare(from))?;
 
