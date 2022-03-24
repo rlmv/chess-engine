@@ -264,6 +264,6 @@ fn perft_3_position_2() {
 #[test]
 fn perft_4_position_2() {
     let depth = 4;
-    let init: Vec<Move> = vec![(E5, F7).into(), (A6, B5).into(), (F7, H8).into()];
+    let init: Vec<Move> = vec![];
     compare_to_stockfish(position2(), init.clone(), depth - init.len());
 }

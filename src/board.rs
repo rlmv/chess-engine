@@ -472,9 +472,10 @@ impl Board {
 
                 assert!(!self.is_empty(captured_square));
                 self.board[captured_square] = None;
+            }
 
-            // Update castling
-            } else if piece == ROOK && color == WHITE && from == A1 {
+            // Update castling - moving off original squares
+            if piece == ROOK && color == WHITE && from == A1 {
                 self.can_castle.queenside_white = false
             } else if piece == ROOK && color == BLACK && from == A8 {
                 self.can_castle.queenside_black = false
@@ -488,6 +489,21 @@ impl Board {
             } else if piece == KING && color == BLACK && from == E8 {
                 self.can_castle.kingside_black = false;
                 self.can_castle.queenside_black = false
+            }
+
+            // Update castling - capturing rook
+            if let Some(Piece(captured_piece, captured_color)) = self.piece_on_square(to) {
+                if captured_piece == ROOK {
+                    if captured_color == WHITE && to == A1 {
+                        self.can_castle.queenside_white = false
+                    } else if captured_color == BLACK && to == A8 {
+                        self.can_castle.queenside_black = false
+                    } else if captured_color == WHITE && to == H1 {
+                        self.can_castle.kingside_white = false
+                    } else if captured_color == BLACK && to == H8 {
+                        self.can_castle.kingside_black = false
+                    }
+                }
             }
 
             self.board[j] = self.board[i];
@@ -2752,6 +2768,23 @@ fn test_en_passant_do_not_wrap_board() {
         sorted(board.legal_moves(H4).unwrap()),
         sorted(vec![(H4, H5).into()])
     );
+}
+
+#[test]
+fn test_castle_bug() {
+    let board =
+        crate::fen::parse("r3k2r/p1ppqNb1/1n2pnp1/1b1P4/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 1 2")
+            .unwrap();
+
+    // capture kingside rook with knight
+    let moved_board = board.make_move((F7, H8).into()).unwrap();
+
+    assert!(!moved_board.can_castle_kingside(BLACK).unwrap());
+    assert!(moved_board
+        .all_moves(moved_board.color_to_move)
+        .unwrap()
+        .find(|mv| *mv == Move::CastleKingside)
+        .is_none());
 }
 
 #[test]
