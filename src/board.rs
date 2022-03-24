@@ -20,7 +20,11 @@ pub use PieceEnum::*;
 /*
  * TODO:
  * - ingest lichess puzzles in a test suite
- * https://github.com/AndyGrant/Ethereal/blb/master/src/movegen.c
+ * - prioritize king safety
+ * - PERFT
+ * - better move ordering
+ *
+ * See https://github.com/AndyGrant/Ethereal/blob/master/src/movegen.c
  */
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Copy, Hash)]
@@ -682,18 +686,17 @@ impl Board {
 
     // Return all legal moves possible for the given color, including castling and promotion
     fn all_moves(&self, color: Color) -> Result<impl Iterator<Item = Move> + '_> {
-        Ok(self
-            .candidate_moves(color)
-            .chain(if self.can_castle_kingside(color)? {
-                vec![Move::CastleKingside].into_iter()
-            } else {
-                Vec::new().into_iter()
-            })
-            .chain(if self.can_castle_queenside(color)? {
-                vec![Move::CastleQueenside].into_iter()
-            } else {
-                Vec::new().into_iter()
-            }))
+        Ok((if self.can_castle_kingside(color)? {
+            vec![Move::CastleKingside].into_iter()
+        } else {
+            Vec::new().into_iter()
+        })
+        .chain(if self.can_castle_queenside(color)? {
+            vec![Move::CastleQueenside].into_iter()
+        } else {
+            Vec::new().into_iter()
+        })
+        .chain(self.candidate_moves(color)))
     }
 
     pub fn plus_vector(s: &Square, v: &MoveVector) -> Option<Square> {
@@ -1177,7 +1180,7 @@ impl Board {
 
         for mv in self.all_moves(self.color_to_move)? {
             let moved_board = self.make_move(mv)?;
-            let moved_path = path.append(mv);
+            let moved_path = path.append(mv, self.color_to_move);
 
             debug!(
                 "{}: Evaluating move {} initial score={} α={} β={}",
@@ -1307,7 +1310,20 @@ impl Board {
             }
         }
 
-        Ok(Score(white_value - black_value + white_bonus - black_bonus))
+        // TODO: only if king is protected
+        const CASTLE_BONUS: i32 = 75;
+        let castle_bonus = path.fold_left(0, |accum, mv, color| {
+            accum
+                + match (mv, color) {
+                    (Move::CastleKingside | Move::CastleQueenside, WHITE) => CASTLE_BONUS,
+                    (Move::CastleKingside | Move::CastleQueenside, BLACK) => -CASTLE_BONUS,
+                    _ => 0,
+                }
+        });
+
+        Ok(Score(
+            white_value - black_value + white_bonus - black_bonus + castle_bonus,
+        ))
     }
 
     fn checkmate(&self, color: Color) -> Result<bool> {
@@ -1877,6 +1893,21 @@ fn test_cannot_castle_kingside_after_moving_h1_rook() {
     assert!(moved_board.can_castle_kingside(BLACK).unwrap());
     assert!(moved_board.can_castle_queenside(WHITE).unwrap());
     assert!(moved_board.can_castle_queenside(BLACK).unwrap());
+}
+
+#[test]
+fn test_should_castle() {
+    init();
+    let board =
+        crate::fen::parse("r2qkbnr/ppp2ppp/2np4/4p3/4P1b1/5N2/PPPPBPPP/RNBQK2R w KQkq - 2 5")
+            .unwrap();
+
+    let (mv, _, history, _) = board.find_best_move(6).unwrap();
+    let mv = mv.unwrap();
+
+    println!("{}", history);
+
+    assert_eq!(mv, Move::CastleKingside);
 }
 
 #[test]

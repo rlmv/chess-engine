@@ -1,6 +1,7 @@
 use std::fmt;
 use std::rc::Rc;
 
+use crate::color::Color;
 use crate::mv::Move;
 
 // Linked list containing the current path to the root in the minimax tree
@@ -18,39 +19,39 @@ impl TraversalPath {
         }
     }
 
-    pub fn append(&self, mv: Move) -> Self {
+    pub fn append(&self, mv: Move, color: Color) -> Self {
         TraversalPath {
-            list: Rc::new(TraversalPathElem::Node(Rc::clone(&self.list), mv)),
+            list: Rc::new(TraversalPathElem::Node(Rc::clone(&self.list), mv, color)),
         }
     }
 
-    pub fn fold_left<T>(&self, zero: T, f: fn(accum: T, mv: &Move) -> T) -> T {
+    pub fn fold_left<T>(&self, zero: T, f: fn(accum: T, mv: &Move, color: &Color) -> T) -> T {
         self.list.fold_left(zero, f)
     }
 
     pub fn len(&self) -> usize {
-        self.fold_left(0, |sum, _| sum + 1)
+        self.fold_left(0, |sum, _, _| sum + 1)
     }
 }
 
 #[derive(Debug)]
 enum TraversalPathElem {
     Head,
-    Node(Rc<TraversalPathElem>, Move),
+    Node(Rc<TraversalPathElem>, Move, Color),
 }
 
 impl TraversalPathElem {
-    fn fold_left<T>(&self, zero: T, f: fn(accum: T, mv: &Move) -> T) -> T {
+    fn fold_left<T>(&self, zero: T, f: fn(accum: T, mv: &Move, color: &Color) -> T) -> T {
         match self {
             TraversalPathElem::Head => zero,
-            TraversalPathElem::Node(next, mv) => f(next.fold_left(zero, f), mv),
+            TraversalPathElem::Node(next, mv, color) => f(next.fold_left(zero, f), mv, color),
         }
     }
 }
 
 impl Into<Vec<Move>> for &TraversalPath {
     fn into(self) -> Vec<Move> {
-        self.fold_left(Vec::new(), |mut v, mv| {
+        self.fold_left(Vec::new(), |mut v, mv, _| {
             v.push(*mv);
             v
         })
@@ -59,7 +60,7 @@ impl Into<Vec<Move>> for &TraversalPath {
 
 impl fmt::Display for TraversalPath {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let s = self.fold_left(String::new(), |mut accum, mv| {
+        let s = self.fold_left(String::new(), |mut accum, mv, _| {
             accum.extend(mv.to_string().chars());
             accum.extend(" ".chars());
             accum
