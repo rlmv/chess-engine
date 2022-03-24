@@ -8,8 +8,8 @@ use crate::square::*;
 use colored::Colorize;
 #[cfg(test)]
 use itertools::Itertools;
+use paste;
 use std::collections::HashMap;
-
 use std::io::Write;
 use std::process::{Command, Stdio};
 
@@ -193,10 +193,23 @@ fn format_move(mv: Move, color: Color) -> String {
     s.to_lowercase()
 }
 
-#[cfg(test)]
-fn startpos() -> Board {
-    fen::parse("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1").unwrap()
+/*
+ * Macro to generate a perft test for a given position and depth
+ */
+#[macro_export]
+macro_rules! perft_test {
+    ( fen=$fen:ident, depth=$depth:literal ) => {
+        paste::item! {
+            #[test]
+            fn [<$fen:lower _depth_ $depth>]() {
+                compare_to_stockfish($fen, Vec::new(), $depth);
+            }
+        }
+    };
 }
+
+#[cfg(test)]
+const POSITION_1: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
 #[cfg(test)]
 const POSITION_2: &str = "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 0";
@@ -204,74 +217,16 @@ const POSITION_2: &str = "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2
 #[cfg(test)]
 const POSITION_4: &str = "r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1";
 
-#[test]
-fn perft_1() {
-    let depth = 1;
-    assert_eq!(perft(startpos(), depth).unwrap(), 20);
-}
+perft_test!(fen = POSITION_1, depth = 1);
+perft_test!(fen = POSITION_1, depth = 2);
+perft_test!(fen = POSITION_1, depth = 3);
+perft_test!(fen = POSITION_1, depth = 4);
+// perft_test!(fen = POSITION_1, depth = 5);
+// perft_test!(fen = POSITION_1, depth = 6);
 
-#[test]
-fn perft_2() {
-    let depth = 2;
-    assert_eq!(perft(startpos(), depth).unwrap(), 400)
-}
+perft_test!(fen = POSITION_2, depth = 1);
+perft_test!(fen = POSITION_2, depth = 2);
+perft_test!(fen = POSITION_2, depth = 3);
+// perft_test!(fen = POSITION_2, depth = 4);
 
-#[test]
-fn perft_3() {
-    let depth = 3;
-    let board = startpos();
-    assert_eq!(perft(board, depth).unwrap(), 8902)
-}
-
-#[test]
-fn perft_4() {
-    let depth = 4;
-    let board = startpos();
-    //    compare_to_stockfish(board.clone(), Vec::new(), depth);
-    assert_eq!(perft(board, depth).unwrap(), 197281)
-}
-
-#[test]
-#[ignore]
-fn perft_5() {
-    let depth = 5;
-    assert_eq!(perft(startpos(), depth).unwrap(), 4865609)
-}
-
-#[test]
-#[ignore]
-fn perft_6() {
-    let depth = 6;
-    assert_eq!(perft(startpos(), depth).unwrap(), 119060324)
-}
-
-#[test]
-fn perft_1_position_2() {
-    let depth = 1;
-    compare_to_stockfish(POSITION_2, Vec::new(), depth);
-}
-
-#[test]
-fn perft_2_position_2() {
-    let depth = 2;
-    compare_to_stockfish(POSITION_2, Vec::new(), depth);
-}
-
-#[test]
-fn position_2_perft3() {
-    let depth = 3;
-    compare_to_stockfish(POSITION_2, Vec::new(), depth);
-}
-
-#[test]
-fn position_2_perft4() {
-    let depth = 4;
-    let init: Vec<Move> = vec![];
-    compare_to_stockfish(POSITION_2, init.clone(), depth - init.len());
-}
-
-#[test]
-fn position_4_perft_4() {
-    let depth = 4;
-    compare_to_stockfish(POSITION_4, Vec::new(), depth);
-}
+perft_test!(fen = POSITION_4, depth = 4);

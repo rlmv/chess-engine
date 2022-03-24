@@ -13,11 +13,13 @@ log4rs = "1.0"
 nom = "7.1"
 log-panics = { version = "2.0", features = ["with-backtrace"] }
 lazy_static = "1.4"
+paste = "0.1"
 
 [dev-dependencies]
 criterion = { version = "0.3", features = ["html_reports"]}
 colored = "2.0"
 itertools = "0.10"
+
 
 [[bench]]
 name = "benchmarks"
