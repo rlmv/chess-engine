@@ -790,8 +790,12 @@ impl Board {
 
             // Compute the squares from which en passant capture could originate
             let en_passant_from = match color {
-                WHITE => (en_passant_target >> 7) | (en_passant_target >> 9),
-                BLACK => (en_passant_target << 7) | (en_passant_target << 9),
+                WHITE => {
+                    ((en_passant_target >> 7) & !A_FILE) | ((en_passant_target >> 9) & !H_FILE)
+                }
+                BLACK => {
+                    ((en_passant_target << 7) & !H_FILE) | ((en_passant_target << 9) & !A_FILE)
+                }
             };
 
             (en_passant_from & self.presence_for(color).pawn.b)
@@ -2737,6 +2741,17 @@ fn test_en_passant_capture_black() {
     assert!(captured_board.is_empty(A4.index())); // capturing pawn has moved
     assert!(captured_board.is_empty(B4.index())); // captured pawn is gone
     assert!(captured_board.piece_on_square(B3) == Some(Piece(PAWN, BLACK))); // capturer moved to en passant target
+}
+
+#[test]
+fn test_en_passant_do_not_wrap_board() {
+    let board =
+        crate::fen::parse("rnbqkbnr/1ppppppp/8/p7/7P/8/PPPPPPP1/RNBQKBNR w KQkq a6 0 2").unwrap();
+
+    assert_eq!(
+        sorted(board.legal_moves(H4).unwrap()),
+        sorted(vec![(H4, H5).into()])
+    );
 }
 
 #[test]

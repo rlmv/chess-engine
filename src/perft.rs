@@ -27,7 +27,6 @@ fn perft(board: Board, depth: usize) -> Result<usize> {
 
         // Drop illegal moves
         if moved_board.is_in_check(board.color_to_move)? {
-            dbg!(mv);
             continue;
         }
 
@@ -47,7 +46,6 @@ fn perft_debug(board: Board, depth: usize) -> Result<HashMap<Move, usize>> {
 
         // Drop illegal moves
         if moved_board.is_in_check(board.color_to_move)? {
-            dbg!(mv);
             continue;
         }
 
@@ -178,28 +176,29 @@ fn format_count(count: Option<&usize>) -> String {
 
 #[test]
 fn perft_1() {
-    assert_eq!(perft(startpos(), 1).unwrap(), 20);
+    let depth = 1;
+    assert_eq!(perft(startpos(), depth).unwrap(), 20);
 }
 
 #[test]
 fn perft_2() {
-    assert_eq!(perft(startpos(), 2).unwrap(), 400)
+    let depth = 2;
+    assert_eq!(perft(startpos(), depth).unwrap(), 400)
 }
 
 #[test]
 fn perft_3() {
-    let setup_moves = vec![
-        Move::Single { from: H2, to: H4 },
-        Move::Single { from: A7, to: A5 },
-    ];
-    let depth = 1;
+    let depth = 3;
+    compare_to_stockfish(Vec::new(), depth);
 
-    compare_to_stockfish(setup_moves, depth);
-
-    assert_eq!(perft(startpos(), 3).unwrap(), 8902)
+    assert_eq!(perft(startpos(), depth).unwrap(), 8902)
 }
 
 #[test]
 fn perft_4() {
-    assert_eq!(perft(startpos(), 4).unwrap(), 197281)
+    let depth = 4;
+    compare_to_stockfish(Vec::new(), depth);
+    assert_eq!(perft(startpos(), depth).unwrap(), 197281)
+}
+
 }
