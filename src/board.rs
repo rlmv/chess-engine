@@ -1902,12 +1902,9 @@ fn test_should_castle() {
         crate::fen::parse("r2qkbnr/ppp2ppp/2np4/4p3/4P1b1/5N2/PPPPBPPP/RNBQK2R w KQkq - 2 5")
             .unwrap();
 
-    let (mv, _, history, _) = board.find_best_move(6).unwrap();
-    let mv = mv.unwrap();
+    let (mv, _, _, _) = board.find_best_move(6).unwrap();
 
-    println!("{}", history);
-
-    assert_eq!(mv, Move::CastleKingside);
+    assert_eq!(mv.unwrap(), Move::CastleKingside);
 }
 
 #[test]

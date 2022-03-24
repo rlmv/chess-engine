@@ -25,8 +25,14 @@ impl TraversalPath {
         }
     }
 
+    // More efficient, use this instead of fold_right unless you need items in
+    // historical order.
     pub fn fold_left<T>(&self, zero: T, f: fn(accum: T, mv: &Move, color: &Color) -> T) -> T {
         self.list.fold_left(zero, f)
+    }
+
+    pub fn fold_right<T>(&self, zero: T, f: fn(accum: T, mv: &Move, color: &Color) -> T) -> T {
+        self.list.fold_right(zero, f)
     }
 
     pub fn len(&self) -> usize {
@@ -41,17 +47,24 @@ enum TraversalPathElem {
 }
 
 impl TraversalPathElem {
+    fn fold_right<T>(&self, zero: T, f: fn(accum: T, mv: &Move, color: &Color) -> T) -> T {
+        match self {
+            TraversalPathElem::Head => zero,
+            TraversalPathElem::Node(next, mv, color) => f(next.fold_right(zero, f), mv, color),
+        }
+    }
+
     fn fold_left<T>(&self, zero: T, f: fn(accum: T, mv: &Move, color: &Color) -> T) -> T {
         match self {
             TraversalPathElem::Head => zero,
-            TraversalPathElem::Node(next, mv, color) => f(next.fold_left(zero, f), mv, color),
+            TraversalPathElem::Node(next, mv, color) => next.fold_left(f(zero, mv, color), f),
         }
     }
 }
 
 impl Into<Vec<Move>> for &TraversalPath {
     fn into(self) -> Vec<Move> {
-        self.fold_left(Vec::new(), |mut v, mv, _| {
+        self.fold_right(Vec::new(), |mut v, mv, _| {
             v.push(*mv);
             v
         })
@@ -60,7 +73,7 @@ impl Into<Vec<Move>> for &TraversalPath {
 
 impl fmt::Display for TraversalPath {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let s = self.fold_left(String::new(), |mut accum, mv, _| {
+        let s = self.fold_right(String::new(), |mut accum, mv, _| {
             accum.extend(mv.to_string().chars());
             accum.extend(" ".chars());
             accum
