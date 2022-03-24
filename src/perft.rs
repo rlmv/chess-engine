@@ -2,6 +2,7 @@ use crate::board::{Board, Result};
 use crate::color::*;
 use crate::fen;
 use crate::mv::Move;
+#[cfg(test)]
 use crate::square::*;
 #[cfg(test)]
 use colored::Colorize;
@@ -16,7 +17,7 @@ use std::process::{Command, Stdio};
 //
 // Results here: https://www.chessprogramming.org/Perft_Results
 
-#[cfg(test)]
+#[allow(dead_code)]
 fn perft(board: Board, depth: usize) -> Result<usize> {
     if depth == 0 {
         return Ok(1);
@@ -38,7 +39,7 @@ fn perft(board: Board, depth: usize) -> Result<usize> {
     return Ok(count);
 }
 
-#[cfg(test)]
+#[allow(dead_code)]
 fn perft_debug(board: Board, depth: usize) -> Result<HashMap<Move, usize>> {
     assert!(depth >= 1);
 
@@ -198,9 +199,10 @@ fn startpos() -> Board {
 }
 
 #[cfg(test)]
-fn position2() -> &'static str {
-    "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 0"
-}
+const POSITION_2: &str = "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 0";
+
+#[cfg(test)]
+const POSITION_4: &str = "r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1";
 
 #[test]
 fn perft_1() {
@@ -246,24 +248,30 @@ fn perft_6() {
 #[test]
 fn perft_1_position_2() {
     let depth = 1;
-    compare_to_stockfish(position2(), Vec::new(), depth);
+    compare_to_stockfish(POSITION_2, Vec::new(), depth);
 }
 
 #[test]
 fn perft_2_position_2() {
     let depth = 2;
-    compare_to_stockfish(position2(), Vec::new(), depth);
+    compare_to_stockfish(POSITION_2, Vec::new(), depth);
 }
 
 #[test]
-fn perft_3_position_2() {
+fn position_2_perft3() {
     let depth = 3;
-    compare_to_stockfish(position2(), Vec::new(), depth);
+    compare_to_stockfish(POSITION_2, Vec::new(), depth);
 }
 
 #[test]
-fn perft_4_position_2() {
+fn position_2_perft4() {
     let depth = 4;
     let init: Vec<Move> = vec![];
-    compare_to_stockfish(position2(), init.clone(), depth - init.len());
+    compare_to_stockfish(POSITION_2, init.clone(), depth - init.len());
+}
+
+#[test]
+fn position_4_perft_4() {
+    let depth = 4;
+    compare_to_stockfish(POSITION_4, Vec::new(), depth);
 }
