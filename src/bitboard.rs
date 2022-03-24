@@ -5,7 +5,7 @@ use crate::rank::*;
 use crate::square::*;
 use crate::vector::*;
 use std::fmt;
-use std::ops::{BitAnd, BitOr, Not};
+use std::ops::{BitAnd, BitOr, Not, Shl, Shr};
 
 use lazy_static::lazy_static;
 
@@ -123,8 +123,11 @@ fn rays() -> Rays {
     }
 }
 
-const A_FILE: Bitboard = Bitboard(0x101010101010101);
-const H_FILE: Bitboard = Bitboard(0x8080808080808080);
+pub const A_FILE: Bitboard = Bitboard(0x101010101010101);
+pub const H_FILE: Bitboard = Bitboard(0x8080808080808080);
+
+pub const RANK_1: Bitboard = Bitboard(0xff);
+pub const RANK_8: Bitboard = Bitboard(0xff00000000000000);
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Bitboard(u64);
@@ -253,6 +256,22 @@ impl Not for Bitboard {
     }
 }
 
+impl Shl<usize> for Bitboard {
+    type Output = Self;
+
+    fn shl(self, rhs: usize) -> Self::Output {
+        Self(self.0 << rhs)
+    }
+}
+
+impl Shr<usize> for Bitboard {
+    type Output = Self;
+
+    fn shr(self, rhs: usize) -> Self::Output {
+        Self(self.0 >> rhs)
+    }
+}
+
 impl fmt::LowerHex for Bitboard {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Bitboard(")?;
@@ -354,7 +373,7 @@ fn test_square() {
 
 #[test]
 fn test_print() {
-    let board = !H_FILE;
+    let board = Bitboard::set_all(&vec![A8, B8, C8, D8, E8, F8, G8, H8]);
     println!("{}", board);
     println!("{:?}", board);
     println!("{:#x}", board);

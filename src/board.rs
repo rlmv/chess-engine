@@ -591,10 +591,8 @@ impl Board {
             }
         }
 
-        for pawn_square in self.presence_for(color).pawn.b.squares() {
-            let pawn = PawnPresenceBitboard::empty(color).set(pawn_square);
-
-            if (pawn.attacks() & target_bitboard).non_empty() {
+        for (_, attacks) in self.all_pawn_attacks(color) {
+            if (attacks & target_bitboard).non_empty() {
                 return true;
             }
         }
@@ -607,15 +605,11 @@ impl Board {
     fn candidate_moves(&self, color: Color) -> impl Iterator<Item = Move> + '_ {
         // TODO: check color, turn
 
-        // attacking moves
+        // TODO: refactor this to remove the unnecessary filtering
 
         let capturing_moves = self
-            .presence_for(color)
-            .pawn
-            .b
-            .squares()
-            .flat_map(move |from| self._pawn_moves(from, &Piece(PAWN, color)))
-            .filter(|mv| self.is_capture(*mv).unwrap())
+            .all_pawn_captures(color)
+            .chain(self.en_passant_captures(color))
             .chain(
                 self.all_knight_attacks(color)
                     .chain(self.all_bishop_attacks(color))
@@ -642,14 +636,7 @@ impl Board {
                     .squares()
                     .map(move |to| Move::Single { from, to })
             })
-            .chain(
-                self.presence_for(color)
-                    .pawn
-                    .b
-                    .squares()
-                    .flat_map(move |from| self._pawn_moves(from, &Piece(PAWN, color)))
-                    .filter(|mv| !self.is_capture(*mv).unwrap()),
-            );
+            .chain(self.all_pawn_advances(color));
 
         capturing_moves.chain(non_capturing_moves)
     }
@@ -747,17 +734,8 @@ impl Board {
             .filter_map(|s| s)
     }
 
-    fn _pawn_moves(&self, from: Square, pawn: &Piece) -> Vec<Move> {
-        let mut moves: Vec<Move> = Vec::with_capacity(8);
-
-        assert!(from.rank() != Rank::_1);
-        assert!(from.rank() != Rank::_8);
-
-        let start_rank = match pawn.color() {
-            WHITE => Rank::_2,
-            BLACK => Rank::_7,
-        };
-
+    // Expand all_pawn_attacks to valid moves
+    fn all_pawn_captures<'a>(&'a self, color: Color) -> impl Iterator<Item = Move> + 'a {
         fn promoting_moves(
             from: Square,
             target: Square,
@@ -772,17 +750,136 @@ impl Board {
                 })
         }
 
-        fn is_promoting_square(target: &Square) -> bool {
-            target.rank() == Rank::_1 || target.rank() == Rank::_8
-        }
+        self.all_pawn_attacks(color)
+            .flat_map(move |(from, bitboard)| {
+                // Only look at attacked squares which contain opponent's pieces
+                let bitboard = bitboard & self.presence_for(color.opposite()).all;
 
-        // TODO: is it possible to vectorize over all pawns using the full
-        // presence bitboards?
+                // Only one of these is going to set anything
+                let promoting = bitboard & (RANK_1 | RANK_8);
+                let not_promoting = bitboard & !(RANK_1 | RANK_8);
+
+                // Expand those attacked squares into concrete moves
+
+                // HACK: chain together these disjoint sets. Workaround for the
+                // fact that Rust's existential types don't play nice in
+                // separate if branches, so cannot do something like
+                //
+                // if rank == 1 || rank == 8 {
+                //   promoting_moves()
+                // } else {
+                //   single_move()
+                // }
+                promoting
+                    .squares()
+                    .flat_map(move |to| promoting_moves(from, to, color))
+                    .chain(
+                        not_promoting
+                            .squares()
+                            .map(move |to| Move::Single { from, to }),
+                    )
+            })
+    }
+
+    fn en_passant_captures<'a>(&'a self, color: Color) -> impl Iterator<Item = Move> + 'a {
+        self.en_passant_target.into_iter().flat_map(move |to| {
+            let en_passant_target = Bitboard::empty().set(to);
+
+            // Compute the squares from which en passant capture could originate
+            let en_passant_from = match color {
+                WHITE => (en_passant_target >> 7) | (en_passant_target >> 9),
+                BLACK => (en_passant_target << 7) | (en_passant_target << 9),
+            };
+
+            (en_passant_from & self.presence_for(color).pawn.b)
+                .squares()
+                .map(move |from| Move::Single { from, to })
+        })
+    }
+
+    // All pawn threats. Note, these are not necessarily
+    // legal moves: there must be an opponent on the attacked square.
+    fn all_pawn_attacks<'a>(
+        &'a self,
+        color: Color,
+    ) -> impl Iterator<Item = (Square, Bitboard)> + 'a {
+        self.presence_for(color)
+            .pawn
+            .b
+            .squares()
+            .map(move |from| (from, self._pawn_attacks(from, &Piece(PAWN, color))))
+    }
+
+    fn _pawn_attacks(&self, from: Square, pawn: &Piece) -> Bitboard {
+        assert!(from.rank() != Rank::_1);
+        assert!(from.rank() != Rank::_8);
+
         let this_piece = PawnPresenceBitboard::empty(pawn.color()).set(from);
 
-        // forward moves (including from start rank)
+        this_piece.attacks()
+    }
+
+    fn all_pawn_advances<'a>(&'a self, color: Color) -> impl Iterator<Item = Move> + 'a {
+        fn promoting_moves(
+            from: Square,
+            target: Square,
+            color: Color,
+        ) -> impl Iterator<Item = Move> {
+            [QUEEN, ROOK, BISHOP, KNIGHT]
+                .into_iter()
+                .map(move |new_piece| Move::Promote {
+                    from,
+                    to: target,
+                    piece: Piece(new_piece, color),
+                })
+        }
+
+        self.presence_for(color)
+            .pawn
+            .b
+            .squares()
+            .map(move |from| (from, self._pawn_advances(from, &Piece(PAWN, color))))
+            .flat_map(move |(from, bitboard)| {
+                // Only one of these is going to set anything
+                let promoting = bitboard & (RANK_1 | RANK_8);
+                let not_promoting = bitboard & !(RANK_1 | RANK_8);
+
+                // Expand those attacked squares into concrete moves
+
+                // HACK: chain together these disjoint sets. Workaround for the
+                // fact that Rust's existential types don't play nice in
+                // separate if branches, so cannot do something like
+                //
+                // if rank == 1 || rank == 8 {
+                //   promoting_moves()
+                // } else {
+                //   single_move()
+                // }
+                promoting
+                    .squares()
+                    .flat_map(move |to| promoting_moves(from, to, color))
+                    .chain(
+                        not_promoting
+                            .squares()
+                            .map(move |to| Move::Single { from, to }),
+                    )
+            })
+    }
+
+    fn _pawn_advances(&self, from: Square, pawn: &Piece) -> Bitboard {
+        assert!(from.rank() != Rank::_1);
+        assert!(from.rank() != Rank::_8);
+
+        let this_piece = PawnPresenceBitboard::empty(pawn.color()).set(from);
+
+        let start_rank = match pawn.color() {
+            WHITE => Rank::_2,
+            BLACK => Rank::_7,
+        };
 
         let max_magnitude = if from.rank() == start_rank { 2 } else { 1 };
+
+        let mut advances = Bitboard::empty();
 
         for magnitude in 1..=max_magnitude {
             let moved_forward = match pawn.color() {
@@ -792,46 +889,14 @@ impl Board {
 
             let not_blocked = moved_forward & !(self.presence_black.all | self.presence_white.all);
 
-            // NOTE: only works because dealing with one pawn:
-            match not_blocked.squares().next() {
-                Some(target) if is_promoting_square(&target) => {
-                    moves.extend(promoting_moves(from, target, pawn.color()))
-                }
-                Some(target) => moves.push(Move::Single {
-                    from: from,
-                    to: target,
-                }),
-                None => break, // blocked, don't try the next square
-            }
-        }
-
-        // capture
-
-        let en_passant_target = self
-            .en_passant_target
-            .map(|target| Bitboard::empty().set(target))
-            .unwrap_or(Bitboard::empty());
-
-        let captures = match pawn.color() {
-            WHITE => this_piece.attacks() & (self.presence_black.all | en_passant_target),
-            BLACK => this_piece.attacks() & (self.presence_white.all | en_passant_target),
-        };
-
-        for target in captures.squares() {
-            // capture and promote
-            if is_promoting_square(&target) {
-                moves.extend(promoting_moves(from, target, pawn.color()));
-
-            // standard capture or en passant
+            if not_blocked.is_empty() {
+                break;
             } else {
-                moves.push(Move::Single {
-                    from: from,
-                    to: target,
-                });
+                advances = advances | not_blocked
             }
         }
 
-        moves
+        advances
     }
 
     fn all_king_attacks<'a>(
@@ -2605,6 +2670,8 @@ fn test_en_passant_capture_white() {
         crate::fen::parse("rnbqkbnr/2ppp1pp/1p6/p3PpP1/8/8/PPPP1P1P/RNBQKBNR w KQkq f6 0 5")
             .unwrap();
 
+    println!("{}", board);
+    dbg!(board.legal_moves(G5).unwrap());
     assert!(board
         .legal_moves(G5)
         .unwrap()
