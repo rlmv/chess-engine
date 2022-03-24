@@ -609,39 +609,49 @@ impl Board {
 
         // attacking moves
 
-        let attacking_moves = self
+        let capturing_moves = self
+            .presence_for(color)
+            .pawn
+            .b
+            .squares()
+            .flat_map(move |from| self._pawn_moves(from, &Piece(PAWN, color)))
+            .filter(|mv| self.is_capture(*mv).unwrap())
+            .chain(
+                self.all_knight_attacks(color)
+                    .chain(self.all_bishop_attacks(color))
+                    .chain(self.all_rook_attacks(color))
+                    .chain(self.all_queen_attacks(color))
+                    .chain(self.all_king_attacks(color))
+                    .map(move |(from, attacks)| {
+                        (from, attacks & self.presence_for(color.opposite()).all)
+                    })
+                    .flat_map(|(from, captures)| {
+                        captures.squares().map(move |to| Move::Single { from, to })
+                    }),
+            );
+
+        let non_capturing_moves = self
             .all_bishop_attacks(color)
             .chain(self.all_rook_attacks(color))
             .chain(self.all_knight_attacks(color))
             .chain(self.all_queen_attacks(color))
             .chain(self.all_king_attacks(color))
-            .flat_map(|(from, attacks)| attacks.squares().map(move |to| Move::Single { from, to }))
+            .map(move |(from, attacks)| (from, attacks & !self.presence_for(color.opposite()).all))
+            .flat_map(|(from, quiet_moves)| {
+                quiet_moves
+                    .squares()
+                    .map(move |to| Move::Single { from, to })
+            })
             .chain(
                 self.presence_for(color)
                     .pawn
                     .b
                     .squares()
-                    .flat_map(move |from| self._pawn_moves(from, &Piece(PAWN, color))),
-            )
-            .filter(|mv| self.is_capture(*mv).unwrap());
+                    .flat_map(move |from| self._pawn_moves(from, &Piece(PAWN, color)))
+                    .filter(|mv| !self.is_capture(*mv).unwrap()),
+            );
 
-        let non_attacking_moves = self
-            .all_bishop_attacks(color)
-            .chain(self.all_rook_attacks(color))
-            .chain(self.all_knight_attacks(color))
-            .chain(self.all_queen_attacks(color))
-            .chain(self.all_king_attacks(color))
-            .flat_map(|(from, attacks)| attacks.squares().map(move |to| Move::Single { from, to }))
-            .chain(
-                self.presence_for(color)
-                    .pawn
-                    .b
-                    .squares()
-                    .flat_map(move |from| self._pawn_moves(from, &Piece(PAWN, color))),
-            )
-            .filter(|mv| !self.is_capture(*mv).unwrap());
-
-        attacking_moves.chain(non_attacking_moves)
+        capturing_moves.chain(non_capturing_moves)
     }
 
     // Return all legal moves for the given square, filtering out those that result in
