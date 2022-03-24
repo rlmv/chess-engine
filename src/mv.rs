@@ -2,7 +2,7 @@ use crate::board::{square_symbol, Piece};
 use crate::square::*;
 use std::fmt;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Move {
     CastleKingside,
     CastleQueenside,

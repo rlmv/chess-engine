@@ -6,6 +6,7 @@ pub mod error;
 pub mod fen;
 pub mod file;
 pub mod mv;
+pub mod perft;
 pub mod rank;
 pub mod square;
 pub mod traversal_path;

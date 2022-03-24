@@ -543,7 +543,7 @@ impl Board {
         self.board[square.index()]
     }
 
-    fn is_in_check(&self, color: Color) -> Result<bool> {
+    pub fn is_in_check(&self, color: Color) -> Result<bool> {
         let mut king_squares = self.presence_for(color).king.squares();
 
         let king_square = king_squares
@@ -684,8 +684,8 @@ impl Board {
         Ok(moves)
     }
 
-    // Return all legal moves possible for the given color, including castling and promotion
-    fn all_moves(&self, color: Color) -> Result<impl Iterator<Item = Move> + '_> {
+    // Return all moves possible for the given color, including castling and promotion
+    pub fn all_moves(&self, color: Color) -> Result<impl Iterator<Item = Move> + '_> {
         Ok((if self.can_castle_kingside(color)? {
             vec![Move::CastleKingside].into_iter()
         } else {

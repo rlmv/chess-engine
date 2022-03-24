@@ -16,6 +16,8 @@ lazy_static = "1.4"
 
 [dev-dependencies]
 criterion = { version = "0.3", features = ["html_reports"]}
+colored = "2.0"
+itertools = "0.10"
 
 [[bench]]
 name = "benchmarks"
