@@ -338,61 +338,6 @@ pub struct PawnPresenceBitboard {
     color: Color,
 }
 
-impl PawnPresenceBitboard {
-    pub fn empty(color: Color) -> Self {
-        Self {
-            b: Bitboard::empty(),
-            color: color,
-        }
-    }
-
-    pub fn set(&self, square: Square) -> Self {
-        Self {
-            b: self.b.set(square),
-            color: self.color,
-        }
-    }
-
-    pub fn attacks(&self) -> Bitboard {
-        match self.color {
-            WHITE => {
-                let east_attacks = self.b.north_by(1).east_by(1) & !A_FILE;
-                let west_attacks = self.b.north_by(1).west_by(1) & !H_FILE;
-                east_attacks | west_attacks
-            }
-            BLACK => {
-                let east_attacks = self.b.south_by(1).east_by(1) & !A_FILE;
-                let west_attacks = self.b.south_by(1).west_by(1) & !H_FILE;
-                east_attacks | west_attacks
-            }
-        }
-    }
-}
-
-#[test]
-fn test_pawn_attacks_white() {
-    let pawn_presence = PawnPresenceBitboard {
-        b: Bitboard::empty().set(A6).set(D2).set(H4),
-        color: WHITE,
-    };
-    assert_eq!(
-        pawn_presence.attacks(),
-        Bitboard::empty().set(B7).set(C3).set(E3).set(G5)
-    );
-}
-
-#[test]
-fn test_pawn_attacks_black() {
-    let pawn_presence = PawnPresenceBitboard {
-        b: Bitboard::empty().set(A6).set(D2).set(H4),
-        color: BLACK,
-    };
-    assert_eq!(
-        pawn_presence.attacks(),
-        Bitboard::empty().set(B5).set(C1).set(E1).set(G3)
-    );
-}
-
 #[test]
 fn test_square() {
     let b = Bitboard::set_all(&vec![D2, H4, A6]);

@@ -108,7 +108,7 @@ impl CastleRights {
 #[derive(Clone, Eq, PartialEq, Debug, Hash)]
 struct Presence {
     color: Color,
-    pawn: PawnPresenceBitboard,
+    pawn: Bitboard,
     knight: Bitboard,
     bishop: Bitboard,
     rook: Bitboard,
@@ -121,7 +121,7 @@ impl Presence {
     pub fn empty(color: Color) -> Self {
         Self {
             color: color,
-            pawn: PawnPresenceBitboard::empty(color),
+            pawn: Bitboard::empty(),
             knight: Bitboard::empty(),
             bishop: Bitboard::empty(),
             rook: Bitboard::empty(),
@@ -861,7 +861,7 @@ impl Board {
                 }
             };
 
-            (en_passant_from & self.presence_for(color).pawn.b)
+            (en_passant_from & self.presence_for(color).pawn)
                 .squares()
                 .map(move |from| Move::Single { from, to })
         })
@@ -875,7 +875,6 @@ impl Board {
     ) -> impl Iterator<Item = (Square, Bitboard)> + 'a {
         self.presence_for(color)
             .pawn
-            .b
             .squares()
             .map(move |from| (from, self._pawn_attacks(from, &Piece(PAWN, color))))
     }
@@ -884,9 +883,20 @@ impl Board {
         assert!(from.rank() != Rank::_1);
         assert!(from.rank() != Rank::_8);
 
-        let this_piece = PawnPresenceBitboard::empty(pawn.color()).set(from);
+        let bitboard = bitboard![from];
 
-        this_piece.attacks()
+        match pawn.color() {
+            WHITE => {
+                let east_attacks = bitboard.north_by(1).east_by(1) & !A_FILE;
+                let west_attacks = bitboard.north_by(1).west_by(1) & !H_FILE;
+                east_attacks | west_attacks
+            }
+            BLACK => {
+                let east_attacks = bitboard.south_by(1).east_by(1) & !A_FILE;
+                let west_attacks = bitboard.south_by(1).west_by(1) & !H_FILE;
+                east_attacks | west_attacks
+            }
+        }
     }
 
     fn all_pawn_advances<'a>(&'a self, color: Color) -> impl Iterator<Item = Move> + 'a {
@@ -906,7 +916,6 @@ impl Board {
 
         self.presence_for(color)
             .pawn
-            .b
             .squares()
             .map(move |from| (from, self._pawn_advances(from, &Piece(PAWN, color))))
             .flat_map(move |(from, bitboard)| {
@@ -940,7 +949,7 @@ impl Board {
         assert!(from.rank() != Rank::_1);
         assert!(from.rank() != Rank::_8);
 
-        let this_piece = PawnPresenceBitboard::empty(pawn.color()).set(from);
+        let this_piece = bitboard![from];
 
         let start_rank = match pawn.color() {
             WHITE => Rank::_2,
@@ -953,8 +962,8 @@ impl Board {
 
         for magnitude in 1..=max_magnitude {
             let moved_forward = match pawn.color() {
-                WHITE => this_piece.b.north_by(magnitude),
-                BLACK => this_piece.b.south_by(magnitude),
+                WHITE => this_piece.north_by(magnitude),
+                BLACK => this_piece.south_by(magnitude),
             };
 
             let not_blocked = moved_forward & !(self.presence_black.all | self.presence_white.all);
@@ -1162,7 +1171,6 @@ impl Board {
 
         presence
             .pawn
-            .b
             .squares()
             .map(move |s| (Piece(PAWN, color), s))
             .chain(
