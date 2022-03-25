@@ -117,13 +117,22 @@ fn evaluate_fen(fen: &String, depth: u8) -> () {
     println!("Parsed board: \n\n{}\n", board);
     println!("Searching for best move to depth {}...\n", depth);
 
+    let start = Instant::now();
+
     let result = board.find_best_move(depth).unwrap();
+
+    let elapsed = start.elapsed();
 
     match result {
         (None, _, _, _) => println!("No move found. In checkmate?"),
         (Some(mv), _, _, node_count) => {
             println!("Done. Best move is {}\n", mv);
-            println!("Evaluated {} nodes\n", node_count);
+            println!(
+                "Evaluated {} nodes in {} seconds. {} nodes per second.\n",
+                node_count,
+                elapsed.as_secs(),
+                node_count as u64 / elapsed.as_secs()
+            );
             let moved_board = board.make_move(mv).unwrap();
             println!("{}\n", moved_board);
         }
