@@ -356,8 +356,8 @@ impl Board {
             self.board[E1.index()] = None;
             self.board[H1.index()] = None;
 
-            let king_mask = Bitboard::empty().set(E1).set(G1);
-            let rook_mask = Bitboard::empty().set(F1).set(H1);
+            let king_mask = bitboard!(E1, G1);
+            let rook_mask = bitboard!(F1, H1);
 
             self.presence_white.king ^= king_mask;
             self.presence_white.rook ^= rook_mask;
@@ -373,8 +373,8 @@ impl Board {
             self.board[E8.index()] = None;
             self.board[H8.index()] = None;
 
-            let king_mask = Bitboard::empty().set(E8).set(G8);
-            let rook_mask = Bitboard::empty().set(F8).set(H8);
+            let king_mask = bitboard!(E8, G8);
+            let rook_mask = bitboard!(F8, H8);
 
             self.presence_black.king ^= king_mask;
             self.presence_black.rook ^= rook_mask;
@@ -400,8 +400,8 @@ impl Board {
             self.board[A1.index()] = None;
             self.board[E1.index()] = None;
 
-            let king_mask = Bitboard::empty().set(C1).set(E1);
-            let rook_mask = Bitboard::empty().set(A1).set(D1);
+            let king_mask = bitboard!(C1, E1);
+            let rook_mask = bitboard!(A1, D1);
 
             self.presence_white.king ^= king_mask;
             self.presence_white.rook ^= rook_mask;
@@ -417,8 +417,8 @@ impl Board {
             self.board[A8.index()] = None;
             self.board[E8.index()] = None;
 
-            let king_mask = Bitboard::empty().set(C8).set(E8);
-            let rook_mask = Bitboard::empty().set(A8).set(D8);
+            let king_mask = bitboard!(C8, E8);
+            let rook_mask = bitboard!(A8, D8);
 
             self.presence_black.king ^= king_mask;
             self.presence_black.rook ^= rook_mask;

@@ -129,6 +129,16 @@ pub const H_FILE: Bitboard = Bitboard(0x8080808080808080);
 pub const RANK_1: Bitboard = Bitboard(0xff);
 pub const RANK_8: Bitboard = Bitboard(0xff00000000000000);
 
+#[macro_export]
+macro_rules! bitboard {
+    ( $( $square:expr ),* ) => {
+        Bitboard::empty()
+            $(
+                .set($square)
+            )*
+    };
+}
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Bitboard(u64);
 
