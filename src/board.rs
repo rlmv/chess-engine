@@ -514,13 +514,10 @@ impl Board {
                 }
             }
 
-            // update mailbox
-
-            let captured = self.piece_on_square(to);
-
             // update bitboards
-
+            let captured = self.piece_on_square(to);
             let ours = self.presence_for_mut(color);
+
             let from_mask = bitboard!(from);
             let to_mask = bitboard!(to);
 
@@ -544,31 +541,29 @@ impl Board {
         Ok(())
     }
 
-    fn promote_pawn(&mut self, from: Square, to: Square, piece: Piece) -> Result<()> {
+    fn promote_pawn(&mut self, from: Square, to: Square, promote_to: Piece) -> Result<()> {
         // TODO: check that this is actually a promoting move. Impose type constraints?
 
-        assert!(piece.color() == self.color_to_move);
-        assert!(self.piece_on_square(from).map(|p| p.color()) == Some(self.color_to_move));
+        assert!(promote_to.color() == self.color_to_move);
 
-        if self.piece_on_square(from).is_none() {
+        if !self.contains_piece(from, PAWN, promote_to.color()) {
             return Err(NoPieceOnFromSquare(from));
         }
 
         // save this here before we start mucking with the board
-        let captured = self.piece_on_square(to);
 
-        // update mailbox
+        let captured = self.piece_on_square(to);
 
         // update bitboards
 
-        let ours = self.presence_for_mut(piece.color());
+        let ours = self.presence_for_mut(promote_to.color());
         let pawn_mask = bitboard!(from);
         let promoted_mask = bitboard!(to);
 
         ours.pawn ^= pawn_mask;
         ours.all ^= pawn_mask;
 
-        *ours.for_piece_mut(piece.piece()) |= promoted_mask;
+        *ours.for_piece_mut(promote_to.piece()) |= promoted_mask;
         ours.all |= promoted_mask;
 
         // in case of capture, remove the opponents piece
@@ -590,6 +585,10 @@ impl Board {
         (bitboard![square] & (self.presence_white.all | self.presence_black.all)).is_empty()
     }
 
+    fn contains_piece(&self, square: Square, piece: PieceEnum, color: Color) -> bool {
+        (bitboard![square] & *self.presence_for(color).for_piece(piece)).non_empty()
+    }
+
     fn can_capture(&self, target: Square, attacker: Color) -> bool {
         self.is_occupied_by_color(target, attacker.opposite())
     }
@@ -597,6 +596,9 @@ impl Board {
     fn is_occupied_by_color(&self, square: Square, color: Color) -> bool {
         (bitboard![square] & self.presence_for(color).all).non_empty()
     }
+
+    // Note: this is inefficient because it needs to iterate all the piece
+    // bitboards. If possible look directly at the bitboard of interest instead.
 
     pub fn piece_on_square(&self, square: Square) -> Option<Piece> {
         let side = if (bitboard![square] & self.presence_white.all).non_empty() {
@@ -1381,7 +1383,7 @@ impl Board {
             [(B1, KNIGHT), (C1, BISHOP), (F1, BISHOP), (G1, KNIGHT)];
 
         for (square, piece) in WHITE_INITIAL_SQUARES.into_iter() {
-            if self.piece_on_square(square) != Some(Piece(piece, WHITE)) {
+            if !self.contains_piece(square, piece, WHITE) {
                 white_bonus += OFF_INITIAL_SQUARE;
             }
         }
@@ -1390,7 +1392,7 @@ impl Board {
             [(B8, KNIGHT), (C8, BISHOP), (F8, BISHOP), (G8, KNIGHT)];
 
         for (square, piece) in BLACK_INITIAL_SQUARES.into_iter() {
-            if self.piece_on_square(square) != Some(Piece(piece, BLACK)) {
+            if !self.contains_piece(square, piece, BLACK) {
                 black_bonus += OFF_INITIAL_SQUARE;
             }
         }

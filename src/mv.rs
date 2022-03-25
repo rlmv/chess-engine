@@ -13,7 +13,7 @@ pub enum Move {
     Promote {
         from: Square,
         to: Square,
-        piece: Piece,
+        piece: Piece, // TODO; only store PieceEnum
     },
 }
 
