@@ -131,7 +131,18 @@ impl Presence {
         }
     }
 
-    pub fn for_piece(&mut self, piece: PieceEnum) -> &mut Bitboard {
+    pub fn for_piece(&self, piece: PieceEnum) -> &Bitboard {
+        match piece {
+            PAWN => &self.pawn,
+            KNIGHT => &self.knight,
+            BISHOP => &self.bishop,
+            ROOK => &self.rook,
+            QUEEN => &self.queen,
+            KING => &self.king,
+        }
+    }
+
+    pub fn for_piece_mut(&mut self, piece: PieceEnum) -> &mut Bitboard {
         match piece {
             PAWN => &mut self.pawn,
             KNIGHT => &mut self.knight,
@@ -145,6 +156,7 @@ impl Presence {
 
 #[derive(Clone, Eq, PartialEq, Debug, Hash)]
 pub struct Board {
+    // TODO: remove board entirely
     board: [Option<Piece>; 64],
     pub color_to_move: Color,
     en_passant_target: Option<Square>,
@@ -292,18 +304,10 @@ impl Board {
 
     fn is_pawn_advance(&self, mv: Move) -> Result<bool> {
         match mv {
-            Move::Single { from, to: _ } => {
-                if let Some(Piece(piece, _)) = self.piece_on_square(from) {
-                    Ok(piece == PAWN)
-                } else {
-                    Err(NoPieceOnFromSquare(from))
-                }
-            }
-            Move::Promote {
-                from: _,
-                to: _,
-                piece: _,
-            } => Ok(true),
+            Move::Single { from, .. } => Ok((bitboard![from]
+                & (self.presence_white.pawn | self.presence_black.pawn))
+                .non_empty()),
+            Move::Promote { .. } => Ok(true),
             Move::CastleKingside => Ok(false),
             Move::CastleQueenside => Ok(false),
         }
@@ -317,17 +321,19 @@ impl Board {
                 from: _,
                 to,
                 piece: _,
-            } => match self.piece_on_square(to) {
-                Some(Piece(target_piece, target_color))
-                    if target_color == self.color_to_move.opposite() =>
+            } => {
+                if (self.presence_for(self.color_to_move.opposite()).all & bitboard!(to))
+                    .non_empty()
                 {
                     Ok(true)
+                } else if (self.presence_for(self.color_to_move).all & bitboard!(to)).non_empty() {
+                    Err(IllegalMove(
+                        "Trying to capture piece of same color".to_string(),
+                    ))
+                } else {
+                    Ok(false)
                 }
-                Some(_) => Err(IllegalMove(
-                    "Trying to capture piece of same color".to_string(),
-                )),
-                None => Ok(false),
-            },
+            }
             Move::CastleKingside => Ok(false),
             Move::CastleQueenside => Ok(false),
         }
@@ -575,15 +581,15 @@ impl Board {
             let from_mask = bitboard!(from);
             let to_mask = bitboard!(to);
 
-            *ours.for_piece(piece) ^= from_mask;
+            *ours.for_piece_mut(piece) ^= from_mask;
             ours.all ^= from_mask;
 
-            *ours.for_piece(piece) ^= to_mask;
+            *ours.for_piece_mut(piece) ^= to_mask;
             ours.all ^= to_mask;
 
             if let Some(captured) = captured {
                 let theirs = self.presence_for_mut(captured.color());
-                *theirs.for_piece(captured.piece()) ^= to_mask;
+                *theirs.for_piece_mut(captured.piece()) ^= to_mask;
                 theirs.all ^= to_mask;
             }
         } else {
@@ -622,14 +628,14 @@ impl Board {
         ours.pawn ^= pawn_mask;
         ours.all ^= pawn_mask;
 
-        *ours.for_piece(piece.piece()) |= promoted_mask;
+        *ours.for_piece_mut(piece.piece()) |= promoted_mask;
         ours.all |= promoted_mask;
 
         // in case of capture, remove the opponents piece
 
         if let Some(captured) = captured {
             let theirs = self.presence_for_mut(captured.color());
-            *theirs.for_piece(captured.piece()) ^= promoted_mask;
+            *theirs.for_piece_mut(captured.piece()) ^= promoted_mask;
             theirs.all ^= promoted_mask;
         }
 
@@ -641,7 +647,7 @@ impl Board {
     }
 
     fn is_empty(&self, square: Square) -> bool {
-        self.board[square.index()].is_none()
+        (bitboard![square] & (self.presence_white.all | self.presence_black.all)).is_empty()
     }
 
     fn can_capture(&self, target: Square, attacker: Color) -> bool {
@@ -653,7 +659,21 @@ impl Board {
     }
 
     pub fn piece_on_square(&self, square: Square) -> Option<Piece> {
-        self.board[square.index()]
+        let side = if (bitboard![square] & self.presence_white.all).non_empty() {
+            &self.presence_white
+        } else if (bitboard![square] & self.presence_black.all).non_empty() {
+            &self.presence_black
+        } else {
+            return None;
+        };
+
+        for piece in [PAWN, KNIGHT, BISHOP, ROOK, QUEEN, KING].into_iter() {
+            if (bitboard![square] & *side.for_piece(piece)).non_empty() {
+                return Some(Piece(piece, side.color));
+            }
+        }
+
+        return None;
     }
 
     pub fn is_in_check(&self, color: Color) -> Result<bool> {
@@ -1500,7 +1520,7 @@ impl fmt::Display for Board {
             write!(f, "{} ", rank)?;
 
             for file in FILES.iter() {
-                let piece: Option<Piece> = self.board[Square::new(*file, *rank).index()];
+                let piece: Option<Piece> = self.piece_on_square(Square::new(*file, *rank));
 
                 let symbol = match piece {
                     Some(piece) => square_symbol(&piece),
@@ -1852,6 +1872,10 @@ fn test_castle_kingside_black() {
         .contains(&Move::CastleKingside));
 
     let castled_board = board.make_move(Move::CastleKingside).unwrap();
+
+    println!("{}", board.presence_black.king);
+    println!("{}", castled_board.presence_black.king);
+    println!("{}", castled_board.presence_black.all);
 
     assert_eq!(
         castled_board,
@@ -2671,6 +2695,12 @@ fn test_pawn_promote_to_queen() {
     );
 
     let moved_board = board.make_move(best_move).unwrap();
+
+    println!("{}", board.presence_white.pawn);
+    println!("{}", board.presence_white.all);
+    println!("{}", moved_board.presence_white.pawn);
+    println!("{}", moved_board.presence_white.queen);
+    println!("{}", moved_board.presence_white.all);
 
     assert_eq!(
         moved_board,
