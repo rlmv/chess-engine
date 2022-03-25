@@ -445,16 +445,16 @@ impl Board {
         let allowed = match color {
             Color::WHITE => {
                 self.can_castle.kingside_white
-                    && self.is_empty(F1.index())
-                    && self.is_empty(G1.index())
+                    && self.is_empty(F1)
+                    && self.is_empty(G1)
                     && !self.attacked_by_color(E1, color.opposite())
                     && !self.attacked_by_color(F1, color.opposite())
                     && !self.attacked_by_color(G1, color.opposite())
             }
             Color::BLACK => {
                 self.can_castle.kingside_black
-                    && self.is_empty(F8.index())
-                    && self.is_empty(G8.index())
+                    && self.is_empty(F8)
+                    && self.is_empty(G8)
                     && !self.attacked_by_color(E8, color.opposite())
                     && !self.attacked_by_color(F8, color.opposite())
                     && !self.attacked_by_color(G8, color.opposite())
@@ -468,18 +468,18 @@ impl Board {
         let allowed = match color {
             Color::WHITE => {
                 self.can_castle.queenside_white
-                    && self.is_empty(B1.index())
-                    && self.is_empty(C1.index())
-                    && self.is_empty(D1.index())
+                    && self.is_empty(B1)
+                    && self.is_empty(C1)
+                    && self.is_empty(D1)
                     && !self.attacked_by_color(C1, color.opposite())
                     && !self.attacked_by_color(D1, color.opposite())
                     && !self.attacked_by_color(E1, color.opposite())
             }
             Color::BLACK => {
                 self.can_castle.queenside_black
-                    && self.is_empty(B8.index())
-                    && self.is_empty(C8.index())
-                    && self.is_empty(D8.index())
+                    && self.is_empty(B8)
+                    && self.is_empty(C8)
+                    && self.is_empty(D8)
                     && !self.attacked_by_color(C8, color.opposite())
                     && !self.attacked_by_color(D8, color.opposite())
                     && !self.attacked_by_color(E8, color.opposite())
@@ -513,20 +513,20 @@ impl Board {
                 && self.en_passant_target == Some(to)
                 && self
                     .en_passant_target
-                    .map(|target| self.is_empty(target.index()))
+                    .map(|target| self.is_empty(target))
                     .unwrap_or(false)
             {
                 // The captured piece is one rank different than the target square
-                let captured_square = match self.color_to_move {
+                let captured_square = Square::from_index(match self.color_to_move {
                     WHITE => to.index() - N_FILES,
                     BLACK => to.index() + N_FILES,
-                };
+                });
 
                 assert!(!self.is_empty(captured_square));
-                self.board[captured_square] = None;
+                self.board[captured_square.index()] = None;
 
                 let theirs = self.presence_for_mut(self.color_to_move.opposite());
-                let mask = bitboard!(Square::from_index(captured_square));
+                let mask = bitboard!(captured_square);
                 theirs.pawn ^= mask;
                 theirs.all ^= mask;
             }
@@ -636,23 +636,20 @@ impl Board {
         Ok(())
     }
 
-    fn is_occupied(&self, square: usize) -> bool {
+    fn is_occupied(&self, square: Square) -> bool {
         !self.is_empty(square)
     }
 
-    fn is_empty(&self, square: usize) -> bool {
-        self.board[square].is_none()
+    fn is_empty(&self, square: Square) -> bool {
+        self.board[square.index()].is_none()
     }
 
-    fn can_capture(&self, target: usize, attacker: Color) -> bool {
+    fn can_capture(&self, target: Square, attacker: Color) -> bool {
         self.is_occupied_by_color(target, attacker.opposite())
     }
 
-    fn is_occupied_by_color(&self, square: usize, color: Color) -> bool {
-        match self.board[square] {
-            Some(piece) if piece.color() == color => true,
-            _ => false,
-        }
+    fn is_occupied_by_color(&self, square: Square, color: Color) -> bool {
+        (bitboard![square] & self.presence_for(color).all).non_empty()
     }
 
     pub fn piece_on_square(&self, square: Square) -> Option<Piece> {
@@ -2137,20 +2134,20 @@ fn test_is_empty() {
         .place_piece(Piece(ROOK, WHITE), A1)
         .place_piece(Piece(PAWN, BLACK), C6);
 
-    assert!(!board.is_empty(A1.index()));
-    assert!(board.is_occupied(A1.index()));
-    assert!(board.is_occupied_by_color(A1.index(), WHITE));
-    assert!(!board.is_occupied_by_color(A1.index(), BLACK));
+    assert!(!board.is_empty(A1));
+    assert!(board.is_occupied(A1));
+    assert!(board.is_occupied_by_color(A1, WHITE));
+    assert!(!board.is_occupied_by_color(A1, BLACK));
 
-    assert!(!board.is_empty(C6.index()));
-    assert!(board.is_occupied(C6.index()));
-    assert!(!board.is_occupied_by_color(C6.index(), WHITE));
-    assert!(board.is_occupied_by_color(C6.index(), BLACK));
+    assert!(!board.is_empty(C6));
+    assert!(board.is_occupied(C6));
+    assert!(!board.is_occupied_by_color(C6, WHITE));
+    assert!(board.is_occupied_by_color(C6, BLACK));
 
-    assert!(board.is_empty(D3.index()));
-    assert!(!board.is_occupied(D3.index()));
-    assert!(!board.is_occupied_by_color(D3.index(), WHITE));
-    assert!(!board.is_occupied_by_color(D3.index(), BLACK));
+    assert!(board.is_empty(D3));
+    assert!(!board.is_occupied(D3));
+    assert!(!board.is_occupied_by_color(D3, WHITE));
+    assert!(!board.is_occupied_by_color(D3, BLACK));
 }
 
 #[test]
@@ -2160,13 +2157,13 @@ fn test_can_capture() {
         .place_piece(Piece(ROOK, WHITE), A1)
         .place_piece(Piece(PAWN, BLACK), C6);
 
-    assert!(!board.can_capture(B7.index(), WHITE));
-    assert!(!board.can_capture(A1.index(), WHITE));
-    assert!(board.can_capture(C6.index(), WHITE));
+    assert!(!board.can_capture(B7, WHITE));
+    assert!(!board.can_capture(A1, WHITE));
+    assert!(board.can_capture(C6, WHITE));
 
-    assert!(!board.can_capture(B7.index(), BLACK));
-    assert!(board.can_capture(A1.index(), BLACK));
-    assert!(!board.can_capture(C6.index(), BLACK));
+    assert!(!board.can_capture(B7, BLACK));
+    assert!(board.can_capture(A1, BLACK));
+    assert!(!board.can_capture(C6, BLACK));
 }
 
 #[test]
@@ -2840,8 +2837,8 @@ fn test_en_passant_capture_white() {
 
     let captured_board = board.make_move(Move::Single { from: E5, to: F6 }).unwrap();
 
-    assert!(captured_board.is_empty(E5.index())); // capturing pawn has moved
-    assert!(captured_board.is_empty(F5.index())); // captured pawn is gone
+    assert!(captured_board.is_empty(E5)); // capturing pawn has moved
+    assert!(captured_board.is_empty(F5)); // captured pawn is gone
     assert!(captured_board.piece_on_square(F6) == Some(Piece(PAWN, WHITE))); // capturer moved to en passant target
 }
 
@@ -2862,8 +2859,8 @@ fn test_en_passant_capture_black() {
 
     let captured_board = board.make_move(Move::Single { from: A4, to: B3 }).unwrap();
 
-    assert!(captured_board.is_empty(A4.index())); // capturing pawn has moved
-    assert!(captured_board.is_empty(B4.index())); // captured pawn is gone
+    assert!(captured_board.is_empty(A4)); // capturing pawn has moved
+    assert!(captured_board.is_empty(B4)); // captured pawn is gone
     assert!(captured_board.piece_on_square(B3) == Some(Piece(PAWN, BLACK))); // capturer moved to en passant target
 }
 
