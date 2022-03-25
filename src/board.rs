@@ -638,27 +638,24 @@ impl Board {
     // Attacking moves are a subset of other moves.
 
     fn attacked_by_color(&self, target_square: Square, color: Color) -> bool {
-        let target_bitboard = Bitboard::empty().set(target_square);
         let attackers = self.presence_for(color);
 
         // Observation: computing attackers of a square is the inverse operation
         // as computing attacks *from* the target square, and computing from the
         // target square requires many fewer operations.
 
-        if (self._queen_attacks(target_square, &Piece(QUEEN, color.opposite())) & attackers.queen)
-            .non_empty()
-        {
-            return true;
-        }
+        // Observation: queen attacks can be computed at the same time as rook
+        // and bishop attacks, just need to AND with the queen bitboard as well.
 
         if (self._bishop_attacks(target_square, &Piece(BISHOP, color.opposite()))
-            & attackers.bishop)
+            & (attackers.bishop | attackers.queen))
             .non_empty()
         {
             return true;
         }
 
-        if (self._rook_attacks(target_square, &Piece(ROOK, color.opposite())) & attackers.rook)
+        if (self._rook_attacks(target_square, &Piece(ROOK, color.opposite()))
+            & (attackers.rook | attackers.queen))
             .non_empty()
         {
             return true;
