@@ -1,15 +1,15 @@
 use chess_engine::error::BoardError;
 use chess_engine::fen;
+use chess_engine::perft;
 use chess_engine::uci;
-
-use std::env;
-
 use log::error;
 use log::LevelFilter;
 use log4rs::append::console::{ConsoleAppender, Target};
 use log4rs::append::file::FileAppender;
 use log4rs::config::{Appender, Config, Root};
 use log_panics;
+use std::env;
+use std::time::Instant;
 
 const DEFAULT_DEPTH: u8 = 4;
 
@@ -32,6 +32,8 @@ fn main() {
                 Command::FEN
             } else if command == "uci" {
                 Command::UCI
+            } else if command == "perft" {
+                Command::PERFT
             } else {
                 panic!("Did not recognize CLI command {}", command)
             }
@@ -49,6 +51,17 @@ fn main() {
                 panic!("Expected a FEN string");
             }
         }
+        Some(Command::PERFT) => {
+            if let Some(fen) = args_iter.next() {
+                let depth: u8 = args_iter
+                    .next()
+                    .map(|s| s.parse().unwrap())
+                    .unwrap_or(DEFAULT_DEPTH);
+                run_perft(fen, depth)
+            } else {
+                panic!("Expected a FEN string");
+            }
+        }
         Some(Command::UCI) | None => uci::run_uci().map_err(|e| error!("{}", e)).unwrap(),
     };
 }
@@ -56,6 +69,7 @@ fn main() {
 enum Command {
     UCI,
     FEN,
+    PERFT,
 }
 
 fn configure_logging() -> Result<(), BoardError> {
@@ -114,4 +128,24 @@ fn evaluate_fen(fen: &String, depth: u8) -> () {
             println!("{}\n", moved_board);
         }
     }
+}
+
+fn run_perft(fen: &String, depth: u8) -> () {
+    let board = fen::parse(fen).unwrap();
+
+    println!("Parsed board: \n\n{}\n", board);
+    println!("Running perft to depth {}...\n", depth);
+
+    let start = Instant::now();
+
+    let result = perft::perft(board, depth.into()).unwrap();
+
+    let elapsed = start.elapsed();
+
+    println!(
+        "Done. Evaluated {} nodes in {} seconds. {} nodes per second.",
+        result,
+        elapsed.as_secs(),
+        result as u64 / elapsed.as_secs()
+    );
 }

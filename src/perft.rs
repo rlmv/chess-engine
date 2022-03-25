@@ -18,7 +18,7 @@ use std::process::{Command, Stdio};
 // Results here: https://www.chessprogramming.org/Perft_Results
 
 #[allow(dead_code)]
-fn perft(board: Board, depth: usize) -> Result<usize> {
+pub fn perft(board: Board, depth: usize) -> Result<usize> {
     if depth == 0 {
         return Ok(1);
     }
