@@ -639,41 +639,48 @@ impl Board {
 
     fn attacked_by_color(&self, target_square: Square, color: Color) -> bool {
         let target_bitboard = Bitboard::empty().set(target_square);
+        let attackers = self.presence_for(color);
 
-        for (_, attacks) in self.all_queen_attacks(color) {
-            if (attacks & target_bitboard).non_empty() {
-                return true;
-            }
+        // Observation: computing attackers of a square is the inverse operation
+        // as computing attacks *from* the target square, and computing from the
+        // target square requires many fewer operations.
+
+        if (self._queen_attacks(target_square, &Piece(QUEEN, color.opposite())) & attackers.queen)
+            .non_empty()
+        {
+            return true;
         }
 
-        for (_, attacks) in self.all_bishop_attacks(color) {
-            if (attacks & target_bitboard).non_empty() {
-                return true;
-            }
+        if (self._bishop_attacks(target_square, &Piece(BISHOP, color.opposite()))
+            & attackers.bishop)
+            .non_empty()
+        {
+            return true;
         }
 
-        for (_, attacks) in self.all_rook_attacks(color) {
-            if (attacks & target_bitboard).non_empty() {
-                return true;
-            }
+        if (self._rook_attacks(target_square, &Piece(ROOK, color.opposite())) & attackers.rook)
+            .non_empty()
+        {
+            return true;
         }
 
-        for (_, attacks) in self.all_knight_attacks(color) {
-            if (attacks & target_bitboard).non_empty() {
-                return true;
-            }
+        if (self._knight_attacks(target_square, &Piece(KNIGHT, color.opposite()))
+            & attackers.knight)
+            .non_empty()
+        {
+            return true;
         }
 
-        for (_, attacks) in self.all_king_attacks(color) {
-            if (attacks & target_bitboard).non_empty() {
-                return true;
-            }
+        if (self._king_attacks(target_square, &Piece(KING, color.opposite())) & attackers.king)
+            .non_empty()
+        {
+            return true;
         }
 
-        for (_, attacks) in self.all_pawn_attacks(color) {
-            if (attacks & target_bitboard).non_empty() {
-                return true;
-            }
+        if (self._pawn_attacks(target_square, &Piece(PAWN, color.opposite())) & attackers.pawn)
+            .non_empty()
+        {
+            return true;
         }
 
         false
@@ -892,9 +899,6 @@ impl Board {
     }
 
     fn _pawn_attacks(&self, from: Square, pawn: &Piece) -> Bitboard {
-        assert!(from.rank() != Rank::_1);
-        assert!(from.rank() != Rank::_8);
-
         let bitboard = bitboard![from];
 
         match pawn.color() {
