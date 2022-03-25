@@ -202,7 +202,7 @@ impl Board {
         let mut new = self.clone();
         new.board[on.index()] = Some(piece);
 
-        new.update_bitboards().unwrap(); // TODO no unwrap
+        new.compute_bitboards().unwrap(); // TODO no unwrap
         new
     }
 
@@ -234,12 +234,13 @@ impl Board {
             new.halfmove_clock += 1
         }
 
-        new.update_bitboards()?;
+        new.update_bitboards(mv)?;
 
         Ok(new)
     }
 
-    fn update_bitboards(&mut self) -> Result<()> {
+    // Compute bitboards from scratch
+    fn compute_bitboards(&mut self) -> Result<()> {
         let mut presence_white = Presence::empty(WHITE);
         let mut presence_black = Presence::empty(BLACK);
 
@@ -269,6 +270,16 @@ impl Board {
         self.presence_black = presence_black;
 
         Ok(())
+    }
+
+    // Incrementally update bitboards after making a move
+    fn update_bitboards(&mut self, mv: Move) -> Result<()> {
+        match mv {
+            Move::Single { from, to } => self.compute_bitboards(),
+            Move::Promote { from, to, piece } => self.compute_bitboards(),
+            Move::CastleKingside => Ok(()),
+            Move::CastleQueenside => Ok(()),
+        }
     }
 
     fn is_pawn_advance(&self, mv: Move) -> Result<bool> {
@@ -345,6 +356,15 @@ impl Board {
             self.board[E1.index()] = None;
             self.board[H1.index()] = None;
 
+            let king_mask = Bitboard::empty().set(E1).set(G1);
+            let rook_mask = Bitboard::empty().set(F1).set(H1);
+
+            self.presence_white.king ^= king_mask;
+            self.presence_white.rook ^= rook_mask;
+
+            self.presence_white.all ^= king_mask;
+            self.presence_white.all ^= rook_mask;
+
             self.can_castle.kingside_white = false;
             self.can_castle.queenside_white = false;
         } else {
@@ -352,6 +372,15 @@ impl Board {
             self.board[F8.index()] = self.board[H8.index()];
             self.board[E8.index()] = None;
             self.board[H8.index()] = None;
+
+            let king_mask = Bitboard::empty().set(E8).set(G8);
+            let rook_mask = Bitboard::empty().set(F8).set(H8);
+
+            self.presence_black.king ^= king_mask;
+            self.presence_black.rook ^= rook_mask;
+
+            self.presence_black.all ^= king_mask;
+            self.presence_black.all ^= rook_mask;
 
             self.can_castle.kingside_black = false;
             self.can_castle.queenside_black = false;
@@ -371,6 +400,15 @@ impl Board {
             self.board[A1.index()] = None;
             self.board[E1.index()] = None;
 
+            let king_mask = Bitboard::empty().set(C1).set(E1);
+            let rook_mask = Bitboard::empty().set(A1).set(D1);
+
+            self.presence_white.king ^= king_mask;
+            self.presence_white.rook ^= rook_mask;
+
+            self.presence_white.all ^= king_mask;
+            self.presence_white.all ^= rook_mask;
+
             self.can_castle.kingside_white = false;
             self.can_castle.queenside_white = false;
         } else {
@@ -378,6 +416,15 @@ impl Board {
             self.board[D8.index()] = self.board[A8.index()];
             self.board[A8.index()] = None;
             self.board[E8.index()] = None;
+
+            let king_mask = Bitboard::empty().set(C8).set(E8);
+            let rook_mask = Bitboard::empty().set(A8).set(D8);
+
+            self.presence_black.king ^= king_mask;
+            self.presence_black.rook ^= rook_mask;
+
+            self.presence_black.all ^= king_mask;
+            self.presence_black.all ^= rook_mask;
 
             self.can_castle.kingside_black = false;
             self.can_castle.queenside_black = false;

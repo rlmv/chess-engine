@@ -5,7 +5,7 @@ use crate::rank::*;
 use crate::square::*;
 use crate::vector::*;
 use std::fmt;
-use std::ops::{BitAnd, BitOr, Not, Shl, Shr};
+use std::ops::{BitAnd, BitOr, BitXor, BitXorAssign, Not, Shl, Shr};
 
 use lazy_static::lazy_static;
 
@@ -145,6 +145,10 @@ impl Bitboard {
         Bitboard(self.0 | 1 << square.index())
     }
 
+    pub fn unset(&self, square: Square) -> Self {
+        Bitboard(self.0 ^ 1 << square.index())
+    }
+
     pub fn set_all(squares: &Vec<Square>) -> Self {
         squares
             .into_iter()
@@ -253,6 +257,20 @@ impl Not for Bitboard {
 
     fn not(self) -> Self::Output {
         Self(!self.0)
+    }
+}
+
+impl BitXor for Bitboard {
+    type Output = Self;
+
+    fn bitxor(self, rhs: Self) -> Self::Output {
+        Self(self.0 ^ rhs.0)
+    }
+}
+
+impl BitXorAssign for Bitboard {
+    fn bitxor_assign(&mut self, rhs: Self) {
+        self.0 ^= rhs.0;
     }
 }
 
