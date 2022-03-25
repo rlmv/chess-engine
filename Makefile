@@ -14,7 +14,7 @@ profile: release
 
 # Great tutorial: http://sandsoftwaresound.net/perf/perf-tutorial-hot-spots/
 perf: release
-	LOG_LEVEL=INFO LOG_STDOUT=TRUE sudo perf record -e task-clock,cpu-clock,faults,cache-misses ${BINARY} fen ${MIDGAME} 8
+	LOG_LEVEL=INFO LOG_STDOUT=TRUE sudo perf record -e task-clock,cpu-clock,faults,cache-misses ${BINARY} fen ${MIDGAME} 9
 	sudo chown bo:bo perf.data
 
 perf-flamegraph: release

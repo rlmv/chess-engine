@@ -217,14 +217,12 @@ impl Bitboard {
 
 pub struct SquareIterator {
     bitboard: Bitboard,
-    offset: u32, // next index in bitboard to inspect
 }
 
 impl SquareIterator {
     fn new(bitboard: &Bitboard) -> Self {
         SquareIterator {
             bitboard: *bitboard,
-            offset: 0,
         }
     }
 }
@@ -234,14 +232,12 @@ impl<'a> Iterator for SquareIterator {
 
     fn next(&mut self) -> Option<Self::Item> {
         // will panic if tries to shift more than 64 bits
-        if self.offset >= 64 || self.bitboard.0 >> self.offset == 0 {
+        if self.bitboard.is_empty() {
             None
         } else {
-            let next = (self.bitboard.0 >> self.offset).trailing_zeros();
-            let square = Square::from_index((self.offset + next) as usize);
-            self.offset += next + 1;
-
-            Some(square)
+            let trailing_zeros = self.bitboard.0.trailing_zeros() as usize;
+            self.bitboard ^= Bitboard(0x1) << trailing_zeros;
+            Some(Square::from_index(trailing_zeros))
         }
     }
 }
