@@ -156,8 +156,6 @@ impl Presence {
 
 #[derive(Clone, Eq, PartialEq, Debug, Hash)]
 pub struct Board {
-    // TODO: remove board entirely
-    board: [Option<Piece>; 64],
     pub color_to_move: Color,
     en_passant_target: Option<Square>,
     // # of moves since last capture or pawn advance. For enforcing the 50-move rule.
@@ -173,7 +171,6 @@ pub struct Board {
 impl Board {
     pub fn empty() -> Self {
         Board {
-            board: [None; 64],
             color_to_move: WHITE,
             en_passant_target: None,
             halfmove_clock: 0,
@@ -230,9 +227,11 @@ impl Board {
 
     pub fn place_piece(&self, piece: Piece, on: Square) -> Board {
         let mut new = self.clone();
-        new.board[on.index()] = Some(piece);
 
-        new.compute_bitboards().unwrap(); // TODO no unwrap
+        let ours = new.presence_for_mut(piece.color());
+        ours.all |= bitboard![on];
+        *ours.for_piece_mut(piece.piece()) |= bitboard![on];
+
         new
     }
 
@@ -267,39 +266,6 @@ impl Board {
         }
 
         Ok(new)
-    }
-
-    // Compute bitboards from scratch
-    fn compute_bitboards(&mut self) -> Result<()> {
-        let mut presence_white = Presence::empty(WHITE);
-        let mut presence_black = Presence::empty(BLACK);
-
-        for (piece, square) in self
-            .board
-            .iter()
-            .enumerate()
-            .filter_map(move |(i, p)| p.map(|piece| (piece, Square::from_index(i))))
-        {
-            let mut presence = match piece.color() {
-                WHITE => &mut presence_white,
-                BLACK => &mut presence_black,
-            };
-
-            match piece.piece() {
-                PAWN => presence.pawn = presence.pawn.set(square),
-                KNIGHT => presence.knight = presence.knight.set(square),
-                BISHOP => presence.bishop = presence.bishop.set(square),
-                ROOK => presence.rook = presence.rook.set(square),
-                QUEEN => presence.queen = presence.queen.set(square),
-                KING => presence.king = presence.king.set(square),
-            }
-
-            presence.all = presence.all.set(square)
-        }
-        self.presence_white = presence_white;
-        self.presence_black = presence_black;
-
-        Ok(())
     }
 
     fn is_pawn_advance(&self, mv: Move) -> Result<bool> {
@@ -365,11 +331,6 @@ impl Board {
         }
 
         if color == Color::WHITE {
-            self.board[G1.index()] = self.board[E1.index()];
-            self.board[F1.index()] = self.board[H1.index()];
-            self.board[E1.index()] = None;
-            self.board[H1.index()] = None;
-
             let king_mask = bitboard!(E1, G1);
             let rook_mask = bitboard!(F1, H1);
 
@@ -382,11 +343,6 @@ impl Board {
             self.can_castle.kingside_white = false;
             self.can_castle.queenside_white = false;
         } else {
-            self.board[G8.index()] = self.board[E8.index()];
-            self.board[F8.index()] = self.board[H8.index()];
-            self.board[E8.index()] = None;
-            self.board[H8.index()] = None;
-
             let king_mask = bitboard!(E8, G8);
             let rook_mask = bitboard!(F8, H8);
 
@@ -409,11 +365,6 @@ impl Board {
         }
 
         if color == Color::WHITE {
-            self.board[C1.index()] = self.board[E1.index()];
-            self.board[D1.index()] = self.board[A1.index()];
-            self.board[A1.index()] = None;
-            self.board[E1.index()] = None;
-
             let king_mask = bitboard!(C1, E1);
             let rook_mask = bitboard!(A1, D1);
 
@@ -426,11 +377,6 @@ impl Board {
             self.can_castle.kingside_white = false;
             self.can_castle.queenside_white = false;
         } else {
-            self.board[C8.index()] = self.board[E8.index()];
-            self.board[D8.index()] = self.board[A8.index()];
-            self.board[A8.index()] = None;
-            self.board[E8.index()] = None;
-
             let king_mask = bitboard!(C8, E8);
             let rook_mask = bitboard!(A8, D8);
 
@@ -529,7 +475,6 @@ impl Board {
                 });
 
                 assert!(!self.is_empty(captured_square));
-                self.board[captured_square.index()] = None;
 
                 let theirs = self.presence_for_mut(self.color_to_move.opposite());
                 let mask = bitboard!(captured_square);
@@ -572,8 +517,6 @@ impl Board {
             // update mailbox
 
             let captured = self.piece_on_square(to);
-            self.board[to.index()] = self.board[from.index()];
-            self.board[from.index()] = None;
 
             // update bitboards
 
@@ -615,9 +558,6 @@ impl Board {
         let captured = self.piece_on_square(to);
 
         // update mailbox
-
-        self.board[to.index()] = Some(piece);
-        self.board[from.index()] = None;
 
         // update bitboards
 
