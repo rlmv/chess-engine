@@ -310,7 +310,7 @@ impl Board {
     }
 
     fn castle_kingside(&mut self, color: Color) -> Result<()> {
-        if !self.can_castle_kingside(color)? {
+        if !self.can_castle_kingside(color) {
             return Err(IllegalCastle);
         }
 
@@ -344,7 +344,7 @@ impl Board {
     }
 
     fn castle_queenside(&mut self, color: Color) -> Result<()> {
-        if !self.can_castle_queenside(color)? {
+        if !self.can_castle_queenside(color) {
             return Err(IllegalCastle);
         }
 
@@ -377,7 +377,7 @@ impl Board {
         Ok(())
     }
 
-    fn can_castle_kingside(&self, color: Color) -> Result<bool> {
+    fn can_castle_kingside(&self, color: Color) -> bool {
         let allowed = match color {
             Color::WHITE => {
                 self.can_castle.kingside_white
@@ -397,10 +397,10 @@ impl Board {
             }
         };
 
-        Ok(allowed)
+        allowed
     }
 
-    fn can_castle_queenside(&self, color: Color) -> Result<bool> {
+    fn can_castle_queenside(&self, color: Color) -> bool {
         let allowed = match color {
             Color::WHITE => {
                 self.can_castle.queenside_white
@@ -422,7 +422,7 @@ impl Board {
             }
         };
 
-        Ok(allowed)
+        allowed
     }
 
     fn move_piece(&mut self, from: Square, to: Square) -> Result<()> {
@@ -737,12 +737,12 @@ impl Board {
 
     // Return all moves possible for the given color, including castling and promotion
     pub fn all_moves(&self, color: Color) -> Result<impl Iterator<Item = Move> + '_> {
-        Ok((if self.can_castle_kingside(color)? {
+        Ok((if self.can_castle_kingside(color) {
             vec![Move::CastleKingside].into_iter()
         } else {
             Vec::new().into_iter()
         })
-        .chain(if self.can_castle_queenside(color)? {
+        .chain(if self.can_castle_queenside(color) {
             vec![Move::CastleQueenside].into_iter()
         } else {
             Vec::new().into_iter()
@@ -1779,10 +1779,10 @@ fn test_cannot_castle_after_moving_white_king() {
         .make_move((D1, E1).into())
         .unwrap();
 
-    assert!(!moved_board.can_castle_kingside(WHITE).unwrap());
-    assert!(moved_board.can_castle_kingside(BLACK).unwrap());
-    assert!(!moved_board.can_castle_queenside(WHITE).unwrap());
-    assert!(moved_board.can_castle_queenside(BLACK).unwrap());
+    assert!(!moved_board.can_castle_kingside(WHITE));
+    assert!(moved_board.can_castle_kingside(BLACK));
+    assert!(!moved_board.can_castle_queenside(WHITE));
+    assert!(moved_board.can_castle_queenside(BLACK));
 }
 
 #[test]
@@ -1802,10 +1802,10 @@ fn test_cannot_castle_after_moving_black_king() {
         .make_move((E7, E8).into())
         .unwrap();
 
-    assert!(moved_board.can_castle_kingside(WHITE).unwrap());
-    assert!(!moved_board.can_castle_kingside(BLACK).unwrap());
-    assert!(moved_board.can_castle_queenside(WHITE).unwrap());
-    assert!(!moved_board.can_castle_queenside(BLACK).unwrap());
+    assert!(moved_board.can_castle_kingside(WHITE));
+    assert!(!moved_board.can_castle_kingside(BLACK));
+    assert!(moved_board.can_castle_queenside(WHITE));
+    assert!(!moved_board.can_castle_queenside(BLACK));
 }
 
 #[test]
@@ -1825,10 +1825,10 @@ fn test_cannot_castle_queenside_after_moving_a1_rook() {
         .make_move((B1, A1).into())
         .unwrap();
 
-    assert!(moved_board.can_castle_kingside(WHITE).unwrap());
-    assert!(moved_board.can_castle_kingside(BLACK).unwrap());
-    assert!(!moved_board.can_castle_queenside(WHITE).unwrap());
-    assert!(moved_board.can_castle_queenside(BLACK).unwrap());
+    assert!(moved_board.can_castle_kingside(WHITE));
+    assert!(moved_board.can_castle_kingside(BLACK));
+    assert!(!moved_board.can_castle_queenside(WHITE));
+    assert!(moved_board.can_castle_queenside(BLACK));
 }
 
 #[test]
@@ -1847,10 +1847,10 @@ fn test_cannot_castle_queenside_after_moving_a8_rook() {
         .make_move((D8, A8).into())
         .unwrap();
 
-    assert!(moved_board.can_castle_kingside(WHITE).unwrap());
-    assert!(moved_board.can_castle_kingside(BLACK).unwrap());
-    assert!(moved_board.can_castle_queenside(WHITE).unwrap());
-    assert!(!moved_board.can_castle_queenside(BLACK).unwrap());
+    assert!(moved_board.can_castle_kingside(WHITE));
+    assert!(moved_board.can_castle_kingside(BLACK));
+    assert!(moved_board.can_castle_queenside(WHITE));
+    assert!(!moved_board.can_castle_queenside(BLACK));
 }
 
 #[test]
@@ -1870,10 +1870,10 @@ fn test_cannot_castle_kingside_after_moving_h8_rook() {
         .make_move((G8, H8).into())
         .unwrap();
 
-    assert!(moved_board.can_castle_kingside(WHITE).unwrap());
-    assert!(!moved_board.can_castle_kingside(BLACK).unwrap());
-    assert!(moved_board.can_castle_queenside(WHITE).unwrap());
-    assert!(moved_board.can_castle_queenside(BLACK).unwrap());
+    assert!(moved_board.can_castle_kingside(WHITE));
+    assert!(!moved_board.can_castle_kingside(BLACK));
+    assert!(moved_board.can_castle_queenside(WHITE));
+    assert!(moved_board.can_castle_queenside(BLACK));
 }
 
 #[test]
@@ -1893,10 +1893,10 @@ fn test_cannot_castle_kingside_after_moving_h1_rook() {
         .make_move((F1, H1).into())
         .unwrap();
 
-    assert!(!moved_board.can_castle_kingside(WHITE).unwrap());
-    assert!(moved_board.can_castle_kingside(BLACK).unwrap());
-    assert!(moved_board.can_castle_queenside(WHITE).unwrap());
-    assert!(moved_board.can_castle_queenside(BLACK).unwrap());
+    assert!(!moved_board.can_castle_kingside(WHITE));
+    assert!(moved_board.can_castle_kingside(BLACK));
+    assert!(moved_board.can_castle_queenside(WHITE));
+    assert!(moved_board.can_castle_queenside(BLACK));
 }
 
 #[test]
@@ -2742,7 +2742,7 @@ fn test_castle_bug() {
     // capture kingside rook with knight
     let moved_board = board.make_move((F7, H8).into()).unwrap();
 
-    assert!(!moved_board.can_castle_kingside(BLACK).unwrap());
+    assert!(!moved_board.can_castle_kingside(BLACK));
     assert!(moved_board
         .all_moves(moved_board.color_to_move)
         .unwrap()
