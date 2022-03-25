@@ -38,19 +38,9 @@ impl Piece {
     fn color(&self) -> Color {
         self.1
     }
-
-    // Relative values of each piece
-    fn value(&self) -> i32 {
-        match self.piece() {
-            PAWN => 100,
-            KNIGHT => 300,
-            BISHOP => 300,
-            ROOK => 500,
-            QUEEN => 900,
-            KING => 100000,
-        }
-    }
 }
+
+const ALL_PIECES: [PieceEnum; 6] = [PAWN, KNIGHT, BISHOP, ROOK, QUEEN, KING];
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Copy, Hash)]
 pub enum PieceEnum {
@@ -60,6 +50,20 @@ pub enum PieceEnum {
     ROOK,
     QUEEN,
     KING,
+}
+
+impl PieceEnum {
+    // Relative values of each piece
+    fn value(&self) -> i32 {
+        match self {
+            PAWN => 100,
+            KNIGHT => 300,
+            BISHOP => 300,
+            ROOK => 500,
+            QUEEN => 900,
+            KING => 100000,
+        }
+    }
 }
 
 impl fmt::Display for PieceEnum {
@@ -313,7 +317,9 @@ impl Board {
                 to,
                 piece: _,
             } => match self.piece_on_square(to) {
-                Some(piece) if piece.color() == self.color_to_move.opposite() => Ok(piece.value()),
+                Some(piece) if piece.color() == self.color_to_move.opposite() => {
+                    Ok(piece.piece().value())
+                }
 
                 Some(_) => Err(IllegalMove(
                     "Trying to capture piece of same color".to_string(),
@@ -609,7 +615,7 @@ impl Board {
             return None;
         };
 
-        for piece in [PAWN, KNIGHT, BISHOP, ROOK, QUEEN, KING].into_iter() {
+        for piece in ALL_PIECES.into_iter() {
             if (bitboard![square] & *side.for_piece(piece)).non_empty() {
                 return Some(Piece(piece, side.color));
             }
@@ -1365,15 +1371,16 @@ impl Board {
             };
         }
 
-        let white_value: i32 = self
-            .all_pieces_of_color(WHITE)
-            .map(|(p, _)| p.value())
-            .sum();
+        fn piece_value(presence: &Presence) -> i32 {
+            let mut value: i32 = 0;
+            for piece in ALL_PIECES.into_iter() {
+                value += presence.for_piece(piece).popcnt() as i32 * piece.value()
+            }
+            value
+        }
 
-        let black_value: i32 = self
-            .all_pieces_of_color(BLACK)
-            .map(|(p, _)| p.value())
-            .sum();
+        let white_value = piece_value(&self.presence_white);
+        let black_value = piece_value(&self.presence_black);
 
         let mut white_bonus: i32 = 0;
         let mut black_bonus: i32 = 0;

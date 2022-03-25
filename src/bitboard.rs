@@ -213,6 +213,13 @@ impl Bitboard {
             Some(Square::from_index(63 - self.0.leading_zeros() as usize))
         }
     }
+
+    // Some interesting references regarding efficient asm instructions
+    // https://users.rust-lang.org/t/what-is-the-implementation-of-count-ones/4923
+    // https://arxiv.org/pdf/1611.07612.pdf
+    pub fn popcnt(&self) -> u32 {
+        self.0.count_ones()
+    }
 }
 
 pub struct SquareIterator {
