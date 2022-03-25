@@ -224,6 +224,8 @@ impl Board {
         new
     }
 
+    // Incremental move. Updates all internal state for the board: mailbox,
+    // bitboards, clocks.
     pub fn make_move(&self, mv: Move) -> Result<Board> {
         let mut new = self.clone();
 
@@ -251,8 +253,6 @@ impl Board {
         } else {
             new.halfmove_clock += 1
         }
-
-        new.update_bitboards(mv)?;
 
         Ok(new)
     }
@@ -288,16 +288,6 @@ impl Board {
         self.presence_black = presence_black;
 
         Ok(())
-    }
-
-    // Incrementally update bitboards after making a move
-    fn update_bitboards(&mut self, mv: Move) -> Result<()> {
-        match mv {
-            Move::Single { from, to } => self.compute_bitboards(),
-            Move::Promote { from, to, piece } => Ok(()),
-            Move::CastleKingside => Ok(()),
-            Move::CastleQueenside => Ok(()),
-        }
     }
 
     fn is_pawn_advance(&self, mv: Move) -> Result<bool> {
@@ -500,9 +490,6 @@ impl Board {
     }
 
     fn move_piece(&mut self, from: Square, to: Square) -> Result<()> {
-        let i = from.index();
-        let j = to.index();
-
         if let Some(Piece(piece, color)) = self.piece_on_square(from) {
             if color != self.color_to_move {
                 return Err(IllegalMove(format!(
@@ -537,6 +524,11 @@ impl Board {
 
                 assert!(!self.is_empty(captured_square));
                 self.board[captured_square] = None;
+
+                let theirs = self.presence_for_mut(self.color_to_move.opposite());
+                let mask = bitboard!(Square::from_index(captured_square));
+                theirs.pawn ^= mask;
+                theirs.all ^= mask;
             }
 
             // Update castling - moving off original squares
@@ -571,8 +563,29 @@ impl Board {
                 }
             }
 
-            self.board[j] = self.board[i];
-            self.board[i] = None;
+            // update mailbox
+
+            let captured = self.piece_on_square(to);
+            self.board[to.index()] = self.board[from.index()];
+            self.board[from.index()] = None;
+
+            // update bitboards
+
+            let ours = self.presence_for_mut(color);
+            let from_mask = bitboard!(from);
+            let to_mask = bitboard!(to);
+
+            *ours.for_piece(piece) ^= from_mask;
+            ours.all ^= from_mask;
+
+            *ours.for_piece(piece) ^= to_mask;
+            ours.all ^= to_mask;
+
+            if let Some(captured) = captured {
+                let theirs = self.presence_for_mut(captured.color());
+                *theirs.for_piece(captured.piece()) ^= to_mask;
+                theirs.all ^= to_mask;
+            }
         } else {
             return Err(NoPieceOnFromSquare(from));
         }
