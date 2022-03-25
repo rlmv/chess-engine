@@ -130,6 +130,17 @@ impl Presence {
             all: Bitboard::empty(),
         }
     }
+
+    pub fn for_piece(&mut self, piece: PieceEnum) -> &mut Bitboard {
+        match piece {
+            PAWN => &mut self.pawn,
+            KNIGHT => &mut self.knight,
+            BISHOP => &mut self.bishop,
+            ROOK => &mut self.rook,
+            QUEEN => &mut self.queen,
+            KING => &mut self.king,
+        }
+    }
 }
 
 #[derive(Clone, Eq, PartialEq, Debug, Hash)]
@@ -165,6 +176,13 @@ impl Board {
         match color {
             WHITE => &self.presence_white,
             BLACK => &self.presence_black,
+        }
+    }
+
+    fn presence_for_mut(&mut self, color: Color) -> &mut Presence {
+        match color {
+            WHITE => &mut self.presence_white,
+            BLACK => &mut self.presence_black,
         }
     }
 
@@ -276,7 +294,7 @@ impl Board {
     fn update_bitboards(&mut self, mv: Move) -> Result<()> {
         match mv {
             Move::Single { from, to } => self.compute_bitboards(),
-            Move::Promote { from, to, piece } => self.compute_bitboards(),
+            Move::Promote { from, to, piece } => Ok(()),
             Move::CastleKingside => Ok(()),
             Move::CastleQueenside => Ok(()),
         }
@@ -565,20 +583,42 @@ impl Board {
     }
 
     fn promote_pawn(&mut self, from: Square, to: Square, piece: Piece) -> Result<()> {
+        // TODO: check that this is actually a promoting move. Impose type constraints?
+
         assert!(piece.color() == self.color_to_move);
         assert!(self.piece_on_square(from).map(|p| p.color()) == Some(self.color_to_move));
 
-        // TODO: check that this is actually a promoting move. Can we impose type constraints?
-
-        let i = from.index();
-        let j = to.index();
-
-        if self.board[i].is_none() {
+        if self.piece_on_square(from).is_none() {
             return Err(NoPieceOnFromSquare(from));
         }
 
-        self.board[j] = Some(piece);
-        self.board[i] = None;
+        // save this here before we start mucking with the board
+        let captured = self.piece_on_square(to);
+
+        // update mailbox
+
+        self.board[to.index()] = Some(piece);
+        self.board[from.index()] = None;
+
+        // update bitboards
+
+        let ours = self.presence_for_mut(piece.color());
+        let pawn_mask = bitboard!(from);
+        let promoted_mask = bitboard!(to);
+
+        ours.pawn ^= pawn_mask;
+        ours.all ^= pawn_mask;
+
+        *ours.for_piece(piece.piece()) |= promoted_mask;
+        ours.all |= promoted_mask;
+
+        // in case of capture, remove the opponents piece
+
+        if let Some(captured) = captured {
+            let theirs = self.presence_for_mut(captured.color());
+            *theirs.for_piece(captured.piece()) ^= promoted_mask;
+            theirs.all ^= promoted_mask;
+        }
 
         Ok(())
     }
