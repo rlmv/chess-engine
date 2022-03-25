@@ -153,9 +153,9 @@ impl UCIInterface {
             }
             UCICommand::Go => {
                 if let Some(board) = &self.board {
-                    let mv = board.find_next_move(self.options.depth)?;
+                    let mv = board.find_best_move(self.options.depth)?;
 
-                    if let Some((mv, _)) = mv {
+                    if let (Some(mv), _, _, _) = mv {
                         Ok(Some(vec![UCIResponse::BestMove {
                             mv: mv,
                             color: board.color_to_move,

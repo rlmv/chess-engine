@@ -1,16 +1,18 @@
 use crate::board::{Board, Result};
+#[cfg(test)]
 use crate::color::*;
+#[cfg(test)]
 use crate::fen;
 use crate::mv::Move;
-#[cfg(test)]
-use crate::square::*;
 #[cfg(test)]
 use colored::Colorize;
 #[cfg(test)]
 use itertools::Itertools;
 use paste;
 use std::collections::HashMap;
+#[cfg(test)]
 use std::io::Write;
+#[cfg(test)]
 use std::process::{Command, Stdio};
 
 // Perft function

@@ -8,7 +8,7 @@ fn midgame_evaluation(c: &mut Criterion) {
         fen::parse("rnbqkbnr/2ppp1pp/1p6/p3PpP1/8/8/PPPP1P1P/RNBQKBNR w KQkq f6 0 5").unwrap();
 
     c.bench_function("midgame evaluation 4 plies", |b| {
-        b.iter(|| board.clone().find_next_move(black_box(4)).unwrap())
+        b.iter(|| board.clone().find_best_move(black_box(4)).unwrap())
     });
 }
 
@@ -17,7 +17,7 @@ fn midgame_evaluation_6_plies(c: &mut Criterion) {
         fen::parse("rnbqkbnr/2ppp1pp/1p6/p3PpP1/8/8/PPPP1P1P/RNBQKBNR w KQkq f6 0 5").unwrap();
 
     c.bench_function("midgame evaluation 6 plies", |b| {
-        b.iter(|| board.clone().find_next_move(black_box(6)).unwrap())
+        b.iter(|| board.clone().find_best_move(black_box(6)).unwrap())
     });
 }
 
@@ -31,7 +31,7 @@ fn midgame_evaluation_8_plies(c: &mut Criterion) {
         fen::parse("rnbqkbnr/2ppp1pp/1p6/p3PpP1/8/8/PPPP1P1P/RNBQKBNR w KQkq f6 0 5").unwrap();
 
     group.bench_function("midgame evaluation 8 plies", |b| {
-        b.iter(|| board.clone().find_next_move(black_box(8)).unwrap())
+        b.iter(|| board.clone().find_best_move(black_box(8)).unwrap())
     });
 }
 

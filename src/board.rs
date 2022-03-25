@@ -308,28 +308,6 @@ impl Board {
             Move::CastleQueenside => Ok(false),
         }
     }
-    fn captured_value(&self, mv: Move) -> Result<i32> {
-        // TODO include en passant capture here
-        match mv {
-            Move::Single { from: _, to }
-            | Move::Promote {
-                from: _,
-                to,
-                piece: _,
-            } => match self.piece_on_square(to) {
-                Some(piece) if piece.color() == self.color_to_move.opposite() => {
-                    Ok(piece.piece().value())
-                }
-
-                Some(_) => Err(IllegalMove(
-                    "Trying to capture piece of same color".to_string(),
-                )),
-                None => Err(IllegalMove("Trying to capture no piece".to_string())),
-            },
-            Move::CastleKingside => Err(IllegalMove("Trying to capture no piece".to_string())),
-            Move::CastleQueenside => Err(IllegalMove("Trying to capture no piece".to_string())),
-        }
-    }
 
     fn castle_kingside(&mut self, color: Color) -> Result<()> {
         if !self.can_castle_kingside(color)? {
@@ -583,24 +561,12 @@ impl Board {
         Ok(())
     }
 
-    fn is_occupied(&self, square: Square) -> bool {
-        !self.is_empty(square)
-    }
-
     fn is_empty(&self, square: Square) -> bool {
         (bitboard![square] & (self.presence_white.all | self.presence_black.all)).is_empty()
     }
 
     fn contains_piece(&self, square: Square, piece: PieceEnum, color: Color) -> bool {
         (bitboard![square] & *self.presence_for(color).for_piece(piece)).non_empty()
-    }
-
-    fn can_capture(&self, target: Square, attacker: Color) -> bool {
-        self.is_occupied_by_color(target, attacker.opposite())
-    }
-
-    fn is_occupied_by_color(&self, square: Square, color: Color) -> bool {
-        (bitboard![square] & self.presence_for(color).all).non_empty()
     }
 
     // Note: this is inefficient because it needs to iterate all the piece
@@ -735,7 +701,7 @@ impl Board {
     //
     // NOTE: do not use this. Inefficient, better to compare against the already
     // moved board in find_next_move.
-    // TODO: refactor or remove
+    #[cfg(test)]
     fn legal_moves(&self, from: Square) -> Result<Vec<Move>> {
         // TODO assert that piece on square is color to move
 
@@ -1182,49 +1148,8 @@ impl Board {
         self._rook_attacks(from, queen) | self._bishop_attacks(from, queen)
     }
 
-    fn all_pieces_of_color<'a>(
-        &'a self,
-        color: Color,
-    ) -> impl Iterator<Item = (Piece, Square)> + 'a {
-        let presence = self.presence_for(color);
-
-        presence
-            .pawn
-            .squares()
-            .map(move |s| (Piece(PAWN, color), s))
-            .chain(
-                presence
-                    .knight
-                    .squares()
-                    .map(move |s| (Piece(KNIGHT, color), s)),
-            )
-            .chain(
-                presence
-                    .bishop
-                    .squares()
-                    .map(move |s| (Piece(BISHOP, color), s)),
-            )
-            .chain(
-                presence
-                    .rook
-                    .squares()
-                    .map(move |s| (Piece(ROOK, color), s)),
-            )
-            .chain(
-                presence
-                    .queen
-                    .squares()
-                    .map(move |s| (Piece(QUEEN, color), s)),
-            )
-            .chain(
-                presence
-                    .king
-                    .squares()
-                    .map(move |s| (Piece(KING, color), s)),
-            )
-    }
-
     // TODO: remove. Only kept for testing
+    #[cfg(test)]
     pub fn find_next_move(&self, depth: u8) -> Result<Option<(Move, Score)>> {
         let (mv, score, _, _) = self.find_best_move(depth)?;
         Ok(mv.map(|m| (m, score)))
@@ -1441,27 +1366,6 @@ impl Board {
 
         Ok(true)
     }
-
-    fn stalemate(&self, color: Color) -> Result<bool> {
-        if self.is_in_check(color)? {
-            return Ok(false);
-        }
-
-        debug!("{}: Evaluating for stalemate", color);
-
-        for mv in self.all_moves(color)? {
-            let moved_board = self.make_move(mv)?;
-
-            // At least one move that avoids check
-            if !moved_board.is_in_check(color)? {
-                return Ok(false);
-            }
-        }
-
-        debug!("{}: No moves, stalemate", color);
-
-        Ok(true)
-    }
 }
 
 impl fmt::Display for Board {
@@ -1559,6 +1463,7 @@ fn sorted(mut v: Vec<Move>) -> Vec<Move> {
     v
 }
 
+#[cfg(test)]
 fn cross_product(from: Square, to: Vec<Square>) -> Vec<Move> {
     to.iter()
         .map(|square| Move::Single {
@@ -2109,35 +2014,8 @@ fn test_is_empty() {
         .place_piece(Piece(PAWN, BLACK), C6);
 
     assert!(!board.is_empty(A1));
-    assert!(board.is_occupied(A1));
-    assert!(board.is_occupied_by_color(A1, WHITE));
-    assert!(!board.is_occupied_by_color(A1, BLACK));
-
     assert!(!board.is_empty(C6));
-    assert!(board.is_occupied(C6));
-    assert!(!board.is_occupied_by_color(C6, WHITE));
-    assert!(board.is_occupied_by_color(C6, BLACK));
-
     assert!(board.is_empty(D3));
-    assert!(!board.is_occupied(D3));
-    assert!(!board.is_occupied_by_color(D3, WHITE));
-    assert!(!board.is_occupied_by_color(D3, BLACK));
-}
-
-#[test]
-fn test_can_capture() {
-    init();
-    let board = Board::empty()
-        .place_piece(Piece(ROOK, WHITE), A1)
-        .place_piece(Piece(PAWN, BLACK), C6);
-
-    assert!(!board.can_capture(B7, WHITE));
-    assert!(!board.can_capture(A1, WHITE));
-    assert!(board.can_capture(C6, WHITE));
-
-    assert!(!board.can_capture(B7, BLACK));
-    assert!(board.can_capture(A1, BLACK));
-    assert!(!board.can_capture(C6, BLACK));
 }
 
 #[test]

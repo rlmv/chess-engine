@@ -38,7 +38,7 @@ impl Square {
     }
 
     /*
-     * Convert a square, eg F2, to an index into the board array.
+     * Convert a square to an index into the board array.
      */
     pub fn index(&self) -> usize {
         self.0
