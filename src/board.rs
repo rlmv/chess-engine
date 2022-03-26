@@ -1196,7 +1196,7 @@ impl Board {
             self._find_next_move(depth, &TraversalPath::head(), Score::MIN, Score::MAX)?;
 
         info!(
-            "Main line score={}, path={:?}, node_count={}",
+            "Main line score={}, path={}, node_count={}",
             score, path, node_count
         );
 
