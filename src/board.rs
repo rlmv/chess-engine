@@ -1327,8 +1327,13 @@ impl Board {
      * - rooks doubled, open ranks
      * - outposts?
      * - passed pawns?
+     * - separate scoring for different phases of the game?
      */
     fn evaluate_position(&self, path: &TraversalPath) -> Result<Score> {
+        const CASTLE_BONUS: i32 = 30;
+        const OFF_INITIAL_SQUARE_BONUS: i32 = 15;
+        const OPEN_FILE_BONUS: i32 = 20;
+
         if self.checkmate(self.color_to_move)? {
             debug!("Found checkmate of {}", BLACK);
             return match self.color_to_move {
@@ -1351,8 +1356,6 @@ impl Board {
         let mut white_bonus: i32 = 0;
         let mut black_bonus: i32 = 0;
 
-        const OFF_INITIAL_SQUARE: i32 = 50;
-
         const WHITE_INITIAL_SQUARES: [(Square, PieceEnum); 6] = [
             (A1, ROOK),
             (B1, KNIGHT),
@@ -1364,7 +1367,7 @@ impl Board {
 
         for (square, piece) in WHITE_INITIAL_SQUARES.into_iter() {
             if !self.contains_piece(square, piece, WHITE) {
-                white_bonus += OFF_INITIAL_SQUARE;
+                white_bonus += OFF_INITIAL_SQUARE_BONUS;
             }
         }
 
@@ -1379,12 +1382,12 @@ impl Board {
 
         for (square, piece) in BLACK_INITIAL_SQUARES.into_iter() {
             if !self.contains_piece(square, piece, BLACK) {
-                black_bonus += OFF_INITIAL_SQUARE;
+                black_bonus += OFF_INITIAL_SQUARE_BONUS;
             }
         }
 
         // TODO: only if king is protected
-        const CASTLE_BONUS: i32 = 75;
+
         let castle_bonus = path.fold_left(0, |accum, mv, color| {
             accum
                 + match (mv, color) {
@@ -1394,9 +1397,32 @@ impl Board {
                 }
         });
 
+        let open_files = self.open_files();
+
+        fn open_file_bonus(open_files: Bitboard, rooks: Bitboard) -> i32 {
+            (open_files & rooks).popcnt() as i32 * OPEN_FILE_BONUS
+        }
+        white_bonus += open_file_bonus(open_files, self.presence_white.rook);
+        black_bonus -= open_file_bonus(open_files, self.presence_black.rook);
+
         Ok(Score(
             white_value - black_value + white_bonus - black_bonus + castle_bonus,
         ))
+    }
+
+    // Open files are files containing no pawns
+
+    fn open_files(&self) -> Bitboard {
+        let pawns = self.presence_white.pawn & self.presence_black.pawn;
+        let mut open = Bitboard::empty();
+
+        for file in ALL_FILES {
+            if (pawns & file).non_empty() {
+                open &= file;
+            }
+        }
+
+        open
     }
 
     fn checkmate(&self, color: Color) -> Result<bool> {
@@ -2808,4 +2834,12 @@ fn test_capture_and_promote_must_update_castle_rights() {
             .unwrap();
 
     board.find_next_move(4).unwrap();
+}
+
+#[test]
+fn compute_open_files() {
+    let board =
+        crate::fen::parse("3q1rk1/1pp1p1pp/2np4/8/6b1/2N2N2/1PPPP1P1/R1BQK2R w KQ - 0 1").unwrap();
+
+    assert_eq!(board.open_files(), A_FILE & F_FILE)
 }

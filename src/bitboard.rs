@@ -123,10 +123,20 @@ fn rays() -> Rays {
     }
 }
 
-pub const A_FILE: Bitboard = Bitboard(0x101010101010101);
+pub const A_FILE: Bitboard = Bitboard(0x0101010101010101);
+pub const B_FILE: Bitboard = Bitboard(0x0202020202020202);
+pub const C_FILE: Bitboard = Bitboard(0x0404040404040404);
+pub const D_FILE: Bitboard = Bitboard(0x0808080808080808);
+pub const E_FILE: Bitboard = Bitboard(0x1010101010101010);
+pub const F_FILE: Bitboard = Bitboard(0x2020202020202020);
+pub const G_FILE: Bitboard = Bitboard(0x4040404040404040);
 pub const H_FILE: Bitboard = Bitboard(0x8080808080808080);
 
-pub const RANK_1: Bitboard = Bitboard(0xff);
+pub const ALL_FILES: [Bitboard; 8] = [
+    A_FILE, B_FILE, C_FILE, D_FILE, E_FILE, F_FILE, G_FILE, H_FILE,
+];
+
+pub const RANK_1: Bitboard = Bitboard(0x00000000000000ff);
 pub const RANK_8: Bitboard = Bitboard(0xff00000000000000);
 
 #[macro_export]
@@ -361,7 +371,8 @@ fn test_square() {
 
 #[test]
 fn test_print() {
-    let board = Bitboard::set_all(&vec![A8, B8, C8, D8, E8, F8, G8, H8]);
+    //    let board = Bitboard::set_all(&vec![A8, B8, C8, D8, E8, F8, G8, H8]);
+    let board = bitboard![G1, G2, G3, G4, G5, G6, G7, G8];
     println!("{}", board);
     println!("{:?}", board);
     println!("{:#x}", board);
