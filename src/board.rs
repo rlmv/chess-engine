@@ -1332,7 +1332,7 @@ impl Board {
     fn evaluate_position(&self, path: &TraversalPath) -> Result<Score> {
         const CASTLE_BONUS: i32 = 30;
         const OFF_INITIAL_SQUARE_BONUS: i32 = 15;
-        const OPEN_FILE_BONUS: i32 = 20;
+        const OPEN_FILE_BONUS: i32 = 21;
 
         if self.checkmate(self.color_to_move)? {
             debug!("Found checkmate of {}", BLACK);
@@ -1419,12 +1419,12 @@ impl Board {
     // Open files are files containing no pawns
 
     fn open_files(&self) -> Bitboard {
-        let pawns = self.presence_white.pawn & self.presence_black.pawn;
+        let pawns = self.presence_white.pawn | self.presence_black.pawn;
         let mut open = Bitboard::empty();
 
         for file in ALL_FILES {
-            if (pawns & file).non_empty() {
-                open &= file;
+            if (pawns & file).is_empty() {
+                open |= file;
             }
         }
 
@@ -2847,5 +2847,5 @@ fn compute_open_files() {
     let board =
         crate::fen::parse("3q1rk1/1pp1p1pp/2np4/8/6b1/2N2N2/1PPPP1P1/R1BQK2R w KQ - 0 1").unwrap();
 
-    assert_eq!(board.open_files(), A_FILE & F_FILE)
+    assert_eq!(board.open_files(), A_FILE | F_FILE)
 }
