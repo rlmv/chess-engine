@@ -970,9 +970,6 @@ impl Board {
     }
 
     fn _pawn_advances(&self, from: Square, pawn: &Piece) -> Bitboard {
-        assert!(from.rank() != Rank::_1);
-        assert!(from.rank() != Rank::_8);
-
         let this_piece = bitboard![from];
 
         let start_rank = match pawn.color() {
