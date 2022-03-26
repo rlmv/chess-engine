@@ -1324,7 +1324,7 @@ impl Board {
      * Positive values favor white, negative favor black.
      *
      * TODO:
-     * - rooks off starting position, doubled
+     * - rooks doubled, open ranks
      * - outposts?
      * - passed pawns?
      */
@@ -1353,8 +1353,14 @@ impl Board {
 
         const OFF_INITIAL_SQUARE: i32 = 50;
 
-        const WHITE_INITIAL_SQUARES: [(Square, PieceEnum); 4] =
-            [(B1, KNIGHT), (C1, BISHOP), (F1, BISHOP), (G1, KNIGHT)];
+        const WHITE_INITIAL_SQUARES: [(Square, PieceEnum); 6] = [
+            (A1, ROOK),
+            (B1, KNIGHT),
+            (C1, BISHOP),
+            (F1, BISHOP),
+            (G1, KNIGHT),
+            (H1, ROOK),
+        ];
 
         for (square, piece) in WHITE_INITIAL_SQUARES.into_iter() {
             if !self.contains_piece(square, piece, WHITE) {
@@ -1362,8 +1368,14 @@ impl Board {
             }
         }
 
-        const BLACK_INITIAL_SQUARES: [(Square, PieceEnum); 4] =
-            [(B8, KNIGHT), (C8, BISHOP), (F8, BISHOP), (G8, KNIGHT)];
+        const BLACK_INITIAL_SQUARES: [(Square, PieceEnum); 6] = [
+            (A8, ROOK),
+            (B8, KNIGHT),
+            (C8, BISHOP),
+            (F8, BISHOP),
+            (G8, KNIGHT),
+            (H8, ROOK),
+        ];
 
         for (square, piece) in BLACK_INITIAL_SQUARES.into_iter() {
             if !self.contains_piece(square, piece, BLACK) {
