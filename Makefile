@@ -3,29 +3,29 @@ OUTPUT = flamegraph-${TIMESTAMP}.svg
 BINARY = ./target/release/chess-engine
 
 STARTPOS = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
-MIDGAME = "r1bqkbnr/ppp2ppp/2np4/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 0 3"
+POSITION_2 = "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 0"
 
 release:
 	CARGO_PROFILE_RELEASE_DEBUG=true cargo build --release
 
 profile: release
-	sudo LOG_LEVEL=INFO LOG_STDOUT=TRUE /home/bo/.cargo/bin/flamegraph --output=${OUTPUT} ${BINARY}  fen ${MIDGAME} 8
+	sudo LOG_LEVEL=INFO LOG_STDOUT=TRUE /home/bo/.cargo/bin/flamegraph --output=${OUTPUT} ${BINARY}  fen ${POSITION_2} 8
 	firefox --new-tab file:///${PWD}/${OUTPUT}
 
 # Great tutorial: http://sandsoftwaresound.net/perf/perf-tutorial-hot-spots/
 perf: release
-	LOG_LEVEL=INFO LOG_STDOUT=TRUE sudo perf record -e task-clock,cpu-clock,faults,cache-misses ${BINARY} fen ${MIDGAME} 9
+	LOG_LEVEL=INFO LOG_STDOUT=TRUE sudo perf record -e task-clock,cpu-clock,faults,cache-misses ${BINARY} fen ${POSITION_2} 9
 	sudo chown bo:bo perf.data
 
 perf-flamegraph: release
-	LOG_LEVEL=INFO LOG_STDOUT=TRUE sudo perf record --call-graph fp -e cpu-clock ${BINARY} fen ${MIDGAME} 6
+	LOG_LEVEL=INFO LOG_STDOUT=TRUE sudo perf record --call-graph fp -e cpu-clock ${BINARY} fen ${POSITION_2} 6
 	sudo chown bo:bo perf.data
 	perf script | ../FlameGraph/stackcollapse-perf.pl > out.perf-folded
 	../FlameGraph/flamegraph.pl out.perf-folded > perf.svg
 	firefox --new-tab file:///${PWD}/perf.svg
 
 dhat: release
-	LOG_STDOUT=TRUE	valgrind --tool=dhat ${BINARY} fen ${MIDGAME} 4
+	LOG_STDOUT=TRUE	valgrind --tool=dhat ${BINARY} fen ${POSITION_2} 4
 
 logs:
 	tail -f -n 100 out.log
