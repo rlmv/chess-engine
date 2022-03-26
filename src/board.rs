@@ -1365,12 +1365,6 @@ impl Board {
             (H1, ROOK),
         ];
 
-        for (square, piece) in WHITE_INITIAL_SQUARES.into_iter() {
-            if !self.contains_piece(square, piece, WHITE) {
-                white_bonus += OFF_INITIAL_SQUARE_BONUS;
-            }
-        }
-
         const BLACK_INITIAL_SQUARES: [(Square, PieceEnum); 6] = [
             (A8, ROOK),
             (B8, KNIGHT),
@@ -1380,11 +1374,23 @@ impl Board {
             (H8, ROOK),
         ];
 
-        for (square, piece) in BLACK_INITIAL_SQUARES.into_iter() {
-            if !self.contains_piece(square, piece, BLACK) {
-                black_bonus += OFF_INITIAL_SQUARE_BONUS;
+        // TODO: fix this, technically gives a bonus if the piece is captured
+        fn off_initial_square_bonus(
+            board: &Board,
+            color: Color,
+            initial_squares: [(Square, PieceEnum); 6],
+        ) -> i32 {
+            let mut bonus: i32 = 0;
+            for (square, piece) in initial_squares {
+                if !board.contains_piece(square, piece, color) {
+                    bonus += OFF_INITIAL_SQUARE_BONUS;
+                }
             }
+            bonus
         }
+
+        white_bonus += off_initial_square_bonus(self, WHITE, WHITE_INITIAL_SQUARES);
+        black_bonus += off_initial_square_bonus(self, BLACK, BLACK_INITIAL_SQUARES);
 
         // TODO: only if king is protected
 
