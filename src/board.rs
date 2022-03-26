@@ -3,16 +3,17 @@ use crate::color::*;
 use crate::constants::*;
 use crate::error::BoardError;
 use crate::error::BoardError::*;
+use crate::evaluate::*;
 use crate::file::*;
 use crate::mv::*;
 use crate::rank::*;
 use crate::square::*;
 use crate::traversal_path::TraversalPath;
 use crate::vector::*;
-use core::cmp::Ordering;
 use log::{debug, info};
 use std::cmp;
 use std::fmt;
+
 pub type Result<T> = std::result::Result<T, BoardError>;
 
 pub use PieceEnum::*;
@@ -40,7 +41,7 @@ impl Piece {
     }
 }
 
-const ALL_PIECES: [PieceEnum; 6] = [PAWN, KNIGHT, BISHOP, ROOK, QUEEN, KING];
+pub const ALL_PIECES: [PieceEnum; 6] = [PAWN, KNIGHT, BISHOP, ROOK, QUEEN, KING];
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Copy, Hash)]
 pub enum PieceEnum {
@@ -50,20 +51,6 @@ pub enum PieceEnum {
     ROOK,
     QUEEN,
     KING,
-}
-
-impl PieceEnum {
-    // Relative values of each piece
-    fn value(&self) -> i32 {
-        match self {
-            PAWN => 100,
-            KNIGHT => 300,
-            BISHOP => 300,
-            ROOK => 500,
-            QUEEN => 900,
-            KING => 100000,
-        }
-    }
 }
 
 impl fmt::Display for PieceEnum {
@@ -110,15 +97,15 @@ impl CastleRights {
 }
 
 #[derive(Clone, Eq, PartialEq, Debug, Hash)]
-struct Presence {
-    color: Color,
-    pawn: Bitboard,
-    knight: Bitboard,
-    bishop: Bitboard,
-    rook: Bitboard,
-    queen: Bitboard,
-    king: Bitboard,
-    all: Bitboard,
+pub struct Presence {
+    pub color: Color,
+    pub pawn: Bitboard,
+    pub knight: Bitboard,
+    pub bishop: Bitboard,
+    pub rook: Bitboard,
+    pub queen: Bitboard,
+    pub king: Bitboard,
+    pub all: Bitboard,
 }
 
 impl Presence {
@@ -168,8 +155,8 @@ pub struct Board {
     fullmove_clock: u16,
     can_castle: CastleRights,
 
-    presence_white: Presence,
-    presence_black: Presence,
+    pub presence_white: Presence,
+    pub presence_black: Presence,
 }
 
 impl Board {
@@ -574,7 +561,7 @@ impl Board {
         (bitboard![square] & (self.presence_white.all | self.presence_black.all)).is_empty()
     }
 
-    fn contains_piece(&self, square: Square, piece: PieceEnum, color: Color) -> bool {
+    pub fn contains_piece(&self, square: Square, piece: PieceEnum, color: Color) -> bool {
         (bitboard![square] & *self.presence_for(color).for_piece(piece)).non_empty()
     }
 
@@ -1221,7 +1208,7 @@ impl Board {
 
         // Leaf node, we are done
         if depth == 0 {
-            return Ok((None, self.evaluate_position(&path)?, path.clone(), 1));
+            return Ok((None, evaluate_position(self, &path)?, path.clone(), 1));
         }
 
         let mut best_move: Option<Move> = None;
@@ -1318,107 +1305,9 @@ impl Board {
         Ok((best_move, best_score, best_path, node_count))
     }
 
-    /*
-     * Evaluate the position for the given color.
-     *
-     * Positive values favor white, negative favor black.
-     *
-     * TODO:
-     * - rooks doubled, open ranks
-     * - outposts?
-     * - passed pawns?
-     * - separate scoring for different phases of the game?
-     */
-    fn evaluate_position(&self, path: &TraversalPath) -> Result<Score> {
-        const CASTLE_BONUS: i32 = 30;
-        const OFF_INITIAL_SQUARE_BONUS: i32 = 15;
-        const OPEN_FILE_BONUS: i32 = 21;
-
-        if self.checkmate(self.color_to_move)? {
-            debug!("Found checkmate of {}", BLACK);
-            return match self.color_to_move {
-                WHITE => Ok(Score::checkmate_white()),
-                BLACK => Ok(Score::checkmate_black()),
-            };
-        }
-
-        fn piece_value(presence: &Presence) -> i32 {
-            let mut value: i32 = 0;
-            for piece in ALL_PIECES.into_iter() {
-                value += presence.for_piece(piece).popcnt() as i32 * piece.value()
-            }
-            value
-        }
-
-        let white_value = piece_value(&self.presence_white);
-        let black_value = piece_value(&self.presence_black);
-
-        let mut white_bonus: i32 = 0;
-        let mut black_bonus: i32 = 0;
-
-        const WHITE_INITIAL_SQUARES: [(Square, PieceEnum); 6] = [
-            (A1, ROOK),
-            (B1, KNIGHT),
-            (C1, BISHOP),
-            (F1, BISHOP),
-            (G1, KNIGHT),
-            (H1, ROOK),
-        ];
-
-        const BLACK_INITIAL_SQUARES: [(Square, PieceEnum); 6] = [
-            (A8, ROOK),
-            (B8, KNIGHT),
-            (C8, BISHOP),
-            (F8, BISHOP),
-            (G8, KNIGHT),
-            (H8, ROOK),
-        ];
-
-        // TODO: fix this, technically gives a bonus if the piece is captured
-        fn off_initial_square_bonus(
-            board: &Board,
-            color: Color,
-            initial_squares: [(Square, PieceEnum); 6],
-        ) -> i32 {
-            let mut bonus: i32 = 0;
-            for (square, piece) in initial_squares {
-                if !board.contains_piece(square, piece, color) {
-                    bonus += OFF_INITIAL_SQUARE_BONUS;
-                }
-            }
-            bonus
-        }
-
-        white_bonus += off_initial_square_bonus(self, WHITE, WHITE_INITIAL_SQUARES);
-        black_bonus += off_initial_square_bonus(self, BLACK, BLACK_INITIAL_SQUARES);
-
-        // TODO: only if king is protected
-
-        let castle_bonus = path.fold_left(0, |accum, mv, color| {
-            accum
-                + match (mv, color) {
-                    (Move::CastleKingside | Move::CastleQueenside, WHITE) => CASTLE_BONUS,
-                    (Move::CastleKingside | Move::CastleQueenside, BLACK) => -CASTLE_BONUS,
-                    _ => 0,
-                }
-        });
-
-        let open_files = self.open_files();
-
-        fn open_file_bonus(open_files: Bitboard, rooks: Bitboard) -> i32 {
-            (open_files & rooks).popcnt() as i32 * OPEN_FILE_BONUS
-        }
-        white_bonus += open_file_bonus(open_files, self.presence_white.rook);
-        black_bonus -= open_file_bonus(open_files, self.presence_black.rook);
-
-        Ok(Score(
-            white_value - black_value + white_bonus - black_bonus + castle_bonus,
-        ))
-    }
-
     // Open files are files containing no pawns
 
-    fn open_files(&self) -> Bitboard {
+    pub fn open_files(&self) -> Bitboard {
         let pawns = self.presence_white.pawn | self.presence_black.pawn;
         let mut open = Bitboard::empty();
 
@@ -1431,7 +1320,7 @@ impl Board {
         open
     }
 
-    fn checkmate(&self, color: Color) -> Result<bool> {
+    pub fn checkmate(&self, color: Color) -> Result<bool> {
         if !self.is_in_check(color)? {
             return Ok(false);
         }
@@ -1486,54 +1375,6 @@ pub fn square_symbol(p: &Piece) -> String {
     match color {
         BLACK => uncolored,
         WHITE => uncolored.to_ascii_uppercase(),
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Score(i32);
-
-impl Score {
-    pub const MAX: Score = Score(i32::MAX);
-    pub const MIN: Score = Score(i32::MIN);
-    pub const ZERO: Score = Score(0);
-
-    fn checkmate_black() -> Score {
-        Score::MAX.minus(1)
-    }
-
-    fn checkmate_white() -> Score {
-        Score::MIN.plus(1)
-    }
-
-    fn minus(&self, x: i32) -> Score {
-        let Score(y) = self;
-        Score(y - x)
-    }
-
-    fn plus(&self, x: i32) -> Score {
-        let Score(y) = self;
-        Score(y + x)
-    }
-}
-
-impl Ord for Score {
-    fn cmp(&self, other: &Self) -> Ordering {
-        let &Score(i) = self;
-        let &Score(j) = other;
-        i.cmp(&j)
-    }
-}
-
-impl PartialOrd for Score {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl fmt::Display for Score {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let &Score(i) = self;
-        write!(f, "{}", i)
     }
 }
 
@@ -2846,6 +2687,5 @@ fn test_capture_and_promote_must_update_castle_rights() {
 fn compute_open_files() {
     let board =
         crate::fen::parse("3q1rk1/1pp1p1pp/2np4/8/6b1/2N2N2/1PPPP1P1/R1BQK2R w KQ - 0 1").unwrap();
-
     assert_eq!(board.open_files(), A_FILE | F_FILE)
 }
