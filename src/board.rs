@@ -610,8 +610,17 @@ impl Board {
     // Attacking moves are a subset of other moves.
 
     fn attacked_by_color(&self, target_square: Square, color: Color) -> bool {
-        let attackers = self.presence_for(color);
+        self.attacking_moves_by_color(target_square, color)
+            .next()
+            .is_some()
+    }
 
+    // TODO: include en passant here?
+    fn attacking_moves_by_color<'a>(
+        &'a self,
+        target_square: Square,
+        color: Color,
+    ) -> impl Iterator<Item = Move> + 'a {
         // Observation: computing attackers of a square is the inverse operation
         // as computing attacks *from* the target square, and computing from the
         // target square requires many fewer operations.
@@ -619,52 +628,62 @@ impl Board {
         // Observation: queen attacks can be computed at the same time as rook
         // and bishop attacks, just need to AND with the queen bitboard as well.
 
-        if (self._bishop_attacks(target_square, &Piece(BISHOP, color.opposite()))
+        let attackers = self.presence_for(color);
+
+        (self._bishop_attacks(target_square, &Piece(BISHOP, color.opposite()))
             & (attackers.bishop | attackers.queen))
-            .non_empty()
-        {
-            return true;
-        }
-
-        if (self._rook_attacks(target_square, &Piece(ROOK, color.opposite()))
-            & (attackers.rook | attackers.queen))
-            .non_empty()
-        {
-            return true;
-        }
-
-        if (self._knight_attacks(target_square, &Piece(KNIGHT, color.opposite()))
-            & attackers.knight)
-            .non_empty()
-        {
-            return true;
-        }
-
-        if (self._king_attacks(target_square, &Piece(KING, color.opposite())) & attackers.king)
-            .non_empty()
-        {
-            return true;
-        }
-
-        if (self._pawn_attacks(target_square, &Piece(PAWN, color.opposite())) & attackers.pawn)
-            .non_empty()
-        {
-            return true;
-        }
-
-        false
+            .squares()
+            .chain(
+                (self._rook_attacks(target_square, &Piece(ROOK, color.opposite()))
+                    & (attackers.rook | attackers.queen))
+                    .squares(),
+            )
+            .chain(
+                (self._knight_attacks(target_square, &Piece(KNIGHT, color.opposite()))
+                    & attackers.knight)
+                    .squares(),
+            )
+            .chain(
+                (self._king_attacks(target_square, &Piece(KING, color.opposite()))
+                    & attackers.king)
+                    .squares(),
+            )
+            .chain(
+                (self._pawn_attacks(target_square, &Piece(PAWN, color.opposite()))
+                    & attackers.pawn)
+                    .squares(),
+            )
+            .map(move |from| Move::Single {
+                from,
+                to: target_square,
+            })
     }
 
     // Return all candidate moves for single pieces, allowing illegal moves
     // (e.g., that move the king into check)
-    fn candidate_moves(&self, color: Color) -> impl Iterator<Item = Move> + '_ {
+    fn candidate_moves(
+        &self,
+        color: Color,
+        history: &TraversalPath,
+    ) -> impl Iterator<Item = Move> + '_ {
         // TODO: check color, turn
 
         // TODO: refactor this to remove the unnecessary filtering
 
+        let last_move = history.peek();
+        let last_destination = last_move.and_then(|(mv, _)| match mv {
+            Move::Single { to, .. } | Move::Promote { to, .. } => Some(to),
+            _ => None,
+        });
+
+        let re_capturing_moves = last_destination
+            .into_iter()
+            .flat_map(move |last_destination| {
+                self.attacking_moves_by_color(last_destination, color)
+            });
+
         let capturing_moves = self
             .all_pawn_captures(color)
-            .chain(self.en_passant_captures(color))
             .chain(
                 self.all_knight_attacks(color)
                     .chain(self.all_bishop_attacks(color))
@@ -677,7 +696,16 @@ impl Board {
                     .flat_map(|(from, captures)| {
                         captures.squares().map(move |to| Move::Single { from, to })
                     }),
-            );
+            )
+            .filter(move |mv| match mv {
+                Move::Single { to, .. } | Move::Promote { to, .. }
+                    if Some(*to) == last_destination =>
+                {
+                    false
+                }
+                _ => true,
+            })
+            .chain(self.en_passant_captures(color));
 
         let non_capturing_moves = self
             .all_bishop_attacks(color)
@@ -693,7 +721,19 @@ impl Board {
             })
             .chain(self.all_pawn_advances(color));
 
-        capturing_moves.chain(non_capturing_moves)
+        re_capturing_moves
+            .chain(if self.can_castle_kingside(color) {
+                vec![Move::CastleKingside].into_iter()
+            } else {
+                Vec::new().into_iter()
+            })
+            .chain(if self.can_castle_queenside(color) {
+                vec![Move::CastleQueenside].into_iter()
+            } else {
+                Vec::new().into_iter()
+            })
+            .chain(capturing_moves)
+            .chain(non_capturing_moves)
     }
 
     // Return all legal moves for the given square, filtering out those that result in
@@ -711,7 +751,7 @@ impl Board {
             .piece_on_square(from)
             .ok_or(NoPieceOnFromSquare(from))?;
 
-        for mv in self.candidate_moves(color) {
+        for mv in self.candidate_moves(color, &TraversalPath::head()) {
             match mv {
                 Move::Promote {
                     from: source,
@@ -737,17 +777,7 @@ impl Board {
 
     // Return all moves possible for the given color, including castling and promotion
     pub fn all_moves(&self, color: Color) -> Result<impl Iterator<Item = Move> + '_> {
-        Ok((if self.can_castle_kingside(color) {
-            vec![Move::CastleKingside].into_iter()
-        } else {
-            Vec::new().into_iter()
-        })
-        .chain(if self.can_castle_queenside(color) {
-            vec![Move::CastleQueenside].into_iter()
-        } else {
-            Vec::new().into_iter()
-        })
-        .chain(self.candidate_moves(color)))
+        Ok(self.candidate_moves(color, &TraversalPath::head()))
     }
 
     pub fn plus_vector(s: &Square, v: &MoveVector) -> Option<Square> {
@@ -1197,7 +1227,7 @@ impl Board {
 
         let mut node_count: u64 = 1; // number of nodes visited by all
 
-        for mv in self.all_moves(self.color_to_move)? {
+        for mv in self.candidate_moves(self.color_to_move, path) {
             let moved_board = self.make_move(mv)?;
             let moved_path = path.append(mv, self.color_to_move);
 

@@ -25,6 +25,13 @@ impl TraversalPath {
         }
     }
 
+    pub fn peek(&self) -> Option<(Move, Color)> {
+        match &self.list.as_ref() {
+            TraversalPathElem::Head => None,
+            TraversalPathElem::Node(_, mv, color) => Some((*mv, *color)),
+        }
+    }
+
     // More efficient, use this instead of fold_right unless you need items in
     // historical order.
     pub fn fold_left<T>(&self, zero: T, f: fn(accum: T, mv: &Move, color: &Color) -> T) -> T {
