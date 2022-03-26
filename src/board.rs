@@ -1322,6 +1322,11 @@ impl Board {
      * Evaluate the position for the given color.
      *
      * Positive values favor white, negative favor black.
+     *
+     * TODO:
+     * - rooks off starting position, doubled
+     * - outposts?
+     * - passed pawns?
      */
     fn evaluate_position(&self, path: &TraversalPath) -> Result<Score> {
         if self.checkmate(self.color_to_move)? {
@@ -2299,18 +2304,7 @@ fn test_puzzle_grab_debug() {
 
 //     init();
 
-//     let board = Board::empty()
-//         .with_color_to_move(WHITE)
-//         .place_piece(Piece(QUEEN, BLACK), A8)
-//         .place_piece(Piece(ROOK, BLACK), C8)
-//         .place_piece(Piece(KING, BLACK), H8)
-//         .place_piece(Piece(PAWN, BLACK), G7)
-//         .place_piece(Piece(PAWN, BLACK), H7)
-//         .place_piece(Piece(QUEEN, WHITE), D5)
-//         .place_piece(Piece(KNIGHT, WHITE), G5)
-//         .place_piece(Piece(PAWN, WHITE), G2)
-//         .place_piece(Piece(PAWN, WHITE), H2)
-//         .place_piece(Piece(KING, WHITE), H1);
+//     let board = crate::fen::parse("q1r4k/6pp/8/3Q2N1/8/8/6PP/7K w - - 0 1").unwrap();
 
 //     Puzzle::new(board)
 //         .should_find_move(G5, F7)
