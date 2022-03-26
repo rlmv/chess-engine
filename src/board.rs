@@ -269,6 +269,7 @@ impl Board {
             new.halfmove_clock += 1
         }
 
+        debug_assert!((self.presence_white.all & self.presence_black.all).is_empty());
         Ok(new)
     }
 
@@ -484,18 +485,8 @@ impl Board {
             }
 
             // Update castling - capturing rook
-            if let Some(Piece(captured_piece, captured_color)) = self.piece_on_square(to) {
-                if captured_piece == ROOK {
-                    if captured_color == WHITE && to == A1 {
-                        self.can_castle.queenside_white = false
-                    } else if captured_color == BLACK && to == A8 {
-                        self.can_castle.queenside_black = false
-                    } else if captured_color == WHITE && to == H1 {
-                        self.can_castle.kingside_white = false
-                    } else if captured_color == BLACK && to == H8 {
-                        self.can_castle.kingside_black = false
-                    }
-                }
+            if let Some(captured) = self.piece_on_square(to) {
+                self.update_castle_rights(captured, to)
             }
 
             // update bitboards
@@ -556,9 +547,27 @@ impl Board {
             let theirs = self.presence_for_mut(captured.color());
             *theirs.for_piece_mut(captured.piece()) ^= promoted_mask;
             theirs.all ^= promoted_mask;
+
+            self.update_castle_rights(captured, to);
         }
 
         Ok(())
+    }
+
+    // Update castling rights after a capture
+
+    fn update_castle_rights(&mut self, captured: Piece, on: Square) -> () {
+        if captured.piece() == ROOK {
+            if captured.color() == WHITE && on == A1 {
+                self.can_castle.queenside_white = false
+            } else if captured.color() == BLACK && on == A8 {
+                self.can_castle.queenside_black = false
+            } else if captured.color() == WHITE && on == H1 {
+                self.can_castle.kingside_white = false
+            } else if captured.color() == BLACK && on == H8 {
+                self.can_castle.kingside_black = false
+            }
+        }
     }
 
     fn is_empty(&self, square: Square) -> bool {
@@ -2753,6 +2762,17 @@ fn test_castle_bug() {
 #[test]
 fn test_foo() {
     let board = crate::fen::parse("5rk1/3n2pp/2p1p3/5pP1/1PPP4/8/5PP1/R5K1 b - - 0 26").unwrap();
+
+    board.find_next_move(4).unwrap();
+}
+
+#[test]
+fn test_capture_and_promote_must_update_castle_rights() {
+    // Bug: was producing the line G2H1b 0-0 H1F3 and crashing
+
+    let board =
+        crate::fen::parse("r3k2r/p1pN1pb1/bn3np1/8/1p2P3/2N2Q2/PPPBBPpP/R3K2R b KQkq - 0 3")
+            .unwrap();
 
     board.find_next_move(4).unwrap();
 }
