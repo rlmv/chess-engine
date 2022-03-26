@@ -137,6 +137,8 @@ pub const ALL_FILES: [Bitboard; 8] = [
 ];
 
 pub const RANK_1: Bitboard = Bitboard(0x00000000000000ff);
+pub const RANK_2: Bitboard = Bitboard(0x000000000000ff00);
+pub const RANK_7: Bitboard = Bitboard(0x00ff000000000000);
 pub const RANK_8: Bitboard = Bitboard(0xff00000000000000);
 
 #[macro_export]
