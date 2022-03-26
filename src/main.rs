@@ -129,9 +129,9 @@ fn evaluate_fen(fen: &String, depth: u8) -> () {
             println!("Done. Best move is {}\n", mv);
             println!(
                 "Evaluated {} nodes in {} seconds. {} nodes per second.\n",
-                node_count,
+                localize(node_count),
                 elapsed.as_secs(),
-                node_count as u64 / elapsed.as_secs()
+                localize(node_count as u64 / elapsed.as_secs())
             );
             let moved_board = board.make_move(mv).unwrap();
             println!("{}\n", moved_board);
@@ -153,8 +153,22 @@ fn run_perft(fen: &String, depth: u8) -> () {
 
     println!(
         "Done. Evaluated {} nodes in {} seconds. {} nodes per second.",
-        result,
+        localize(result),
         elapsed.as_secs(),
-        result as u64 / elapsed.as_secs()
+        localize(result as u64 / elapsed.as_secs())
     );
+}
+
+// localize a number eg 10000000 -> 10,000,000
+fn localize<T: std::fmt::Display>(n: T) -> String {
+    let mut out = String::new();
+
+    for (i, char) in n.to_string().chars().rev().enumerate() {
+        if i % 3 == 0 && i != 0 {
+            out.push(',')
+        }
+        out.push(char);
+    }
+
+    out.chars().rev().collect()
 }
