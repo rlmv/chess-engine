@@ -1206,8 +1206,12 @@ impl Board {
         let mut alpha = alpha_arg;
         let mut beta = beta_arg;
 
-        // Leaf node, we are done
-        if depth == 0 {
+        // Leaf node, we are done.
+        // Unless our king is in check, then extend the search by one ply.
+
+        if depth == 0 && self.is_in_check(self.color_to_move)? {
+            return self._find_next_move(1, path, alpha_arg, beta_arg);
+        } else if depth == 0 {
             return Ok((None, evaluate_position(self, &path)?, path.clone(), 1));
         }
 
@@ -1832,9 +1836,10 @@ fn test_should_castle() {
         crate::fen::parse("r2qkbnr/ppp2ppp/2np4/4p3/4P1b1/5N2/PPPPBPPP/RNBQK2R w KQkq - 2 5")
             .unwrap();
 
-    let (mv, _, _, _) = board.find_best_move(6).unwrap();
+    let (_, _, path, _) = board.find_best_move(6).unwrap();
 
-    assert_eq!(mv.unwrap(), Move::CastleKingside);
+    assert!(path.fold_left(false, |did_castle, mv, color| did_castle
+        || (*mv == Move::CastleKingside && *color == WHITE)));
 }
 
 #[test]

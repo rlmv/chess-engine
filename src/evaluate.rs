@@ -7,7 +7,6 @@ use crate::mv::*;
 use crate::square::*;
 use crate::traversal_path::*;
 use core::cmp::Ordering;
-use log::debug;
 use std::fmt;
 
 const CASTLE_BONUS: i32 = 30;
@@ -51,14 +50,6 @@ fn piece_value(presence: &Presence) -> i32 {
  * - separate scoring for different phases of the game?
  */
 pub fn evaluate_position(board: &Board, path: &TraversalPath) -> Result<Score> {
-    if board.checkmate(board.color_to_move)? {
-        debug!("Found checkmate of {}", BLACK);
-        return match board.color_to_move {
-            WHITE => Ok(Score::checkmate_white()),
-            BLACK => Ok(Score::checkmate_black()),
-        };
-    }
-
     let white_value = piece_value(&board.presence_white);
     let black_value = piece_value(&board.presence_black);
 
