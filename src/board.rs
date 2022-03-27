@@ -234,6 +234,9 @@ impl Board {
     pub fn compute_checkers(&mut self, from: Square, to: Square, piece: Piece) -> Result<()> {
         // TODO: ensure en passant is handled correctly
 
+        println!("{}", piece.color());
+        println!("{}", self);
+
         let mut checking_me = Bitboard::empty();
         let mut checking_them = Bitboard::empty();
 
@@ -305,6 +308,8 @@ impl Board {
         let mut theirs = self.presence_for_mut(piece.color().opposite());
         theirs.checkers = checking_me;
 
+        println!("{}", checking_them);
+        println!("{}", checking_me);
         Ok(())
     }
 
@@ -2409,6 +2414,8 @@ fn test_pawn_capture_white() {
         .place_piece(Piece(ROOK, BLACK), E7)
         .place_piece(Piece(ROOK, BLACK), G7);
 
+    println!("{}", board);
+
     assert_eq!(
         sorted(board.legal_moves(F6).unwrap()),
         sorted(cross_product(F6, vec![E7, F7, G7]))
@@ -2788,13 +2795,13 @@ fn compute_open_files() {
 fn compute_attacks(
     from: Square,
     rays: &[Bitboard; 64],
-    same_color: Bitboard,
-    other_color: Bitboard,
+    attackers: Bitboard,
+    defenders: Bitboard,
     bitscan: fn(Bitboard) -> Option<Square>,
 ) -> Bitboard {
-    let intersections = rays[from.index()] & (same_color | other_color);
+    let intersections = rays[from.index()] & (attackers | defenders);
 
-    !same_color
+    !attackers
         & match bitscan(intersections) {
             Some(blocker) => rays[from.index()] & !rays[blocker.index()],
             None => rays[from.index()],
@@ -2814,52 +2821,84 @@ fn revealed_attacks(
         _ => return Bitboard::empty(),
     };
 
+    dbg!(defended_king_square);
+
+    // compute ray from king to the vacated square
+
     let delta_y = from.rank().index() as i8 - defended_king_square.rank().index() as i8;
     let delta_x = from.file().index() as i8 - defended_king_square.file().index() as i8;
 
     // A1 -> A4
-    let rays: Option<(&[Bitboard; 64], fn(Bitboard) -> Option<Square>)> = if delta_x == 0 {
+    let rays: Option<(
+        &[Bitboard; 64],
+        fn(Bitboard) -> Option<Square>,
+        Bitboard, // attacking pieces
+    )> = if delta_x == 0 {
         if delta_y > 0 {
-            Some((&PRECOMPUTED_BITBOARDS.rays.north, |b| b.bitscan_forward()))
+            Some((
+                &PRECOMPUTED_BITBOARDS.rays.north,
+                |b| b.bitscan_forward(),
+                attackers.rook | attackers.queen,
+            ))
         } else {
-            Some((&PRECOMPUTED_BITBOARDS.rays.south, |b| b.bitscan_backward()))
+            Some((
+                &PRECOMPUTED_BITBOARDS.rays.south,
+                |b| b.bitscan_backward(),
+                attackers.rook | attackers.queen,
+            ))
         }
     } else if delta_y == 0 {
         if delta_x > 0 {
-            Some((&PRECOMPUTED_BITBOARDS.rays.east, |b| b.bitscan_forward()))
+            Some((
+                &PRECOMPUTED_BITBOARDS.rays.east,
+                |b| b.bitscan_forward(),
+                attackers.rook | attackers.queen,
+            ))
         } else {
-            Some((&PRECOMPUTED_BITBOARDS.rays.west, |b| b.bitscan_backward()))
+            Some((
+                &PRECOMPUTED_BITBOARDS.rays.west,
+                |b| b.bitscan_backward(),
+                attackers.rook | attackers.queen,
+            ))
         }
     } else if delta_y.abs() == delta_x.abs() {
         if delta_x > 0 && delta_y > 0 {
-            Some((&PRECOMPUTED_BITBOARDS.rays.north_east, |b| {
-                b.bitscan_forward()
-            }))
+            Some((
+                &PRECOMPUTED_BITBOARDS.rays.north_east,
+                |b| b.bitscan_forward(),
+                attackers.bishop | attackers.queen,
+            ))
         } else if delta_x > 0 && delta_y < 0 {
-            Some((&PRECOMPUTED_BITBOARDS.rays.south_east, |b| {
-                b.bitscan_backward()
-            }))
+            Some((
+                &PRECOMPUTED_BITBOARDS.rays.south_east,
+                |b| b.bitscan_backward(),
+                attackers.bishop | attackers.queen,
+            ))
         } else if delta_x < 0 && delta_y < 0 {
-            Some((&PRECOMPUTED_BITBOARDS.rays.south_west, |b| {
-                b.bitscan_backward()
-            }))
+            Some((
+                &PRECOMPUTED_BITBOARDS.rays.south_west,
+                |b| b.bitscan_backward(),
+                attackers.bishop | attackers.queen,
+            ))
         } else {
-            Some((&PRECOMPUTED_BITBOARDS.rays.north_west, |b| {
-                b.bitscan_forward()
-            }))
+            Some((
+                &PRECOMPUTED_BITBOARDS.rays.north_west,
+                |b| b.bitscan_forward(),
+                attackers.bishop | attackers.queen,
+            ))
         }
     } else {
         None
     };
 
-    if let Some((rays, bitscan)) = rays {
+    if let Some((rays, bitscan, attacking_pieces)) = rays {
         compute_attacks(
             defended_king_square,
             rays,
             defenders.all,
             attackers.all,
             bitscan,
-        ) & attackers.all
+        ) & attacking_pieces // TODO: must be the specific piece type
     } else {
         Bitboard::empty()
     }
