@@ -106,6 +106,7 @@ pub struct Presence {
     pub queen: Bitboard,
     pub king: Bitboard,
     pub all: Bitboard,
+    pub checkers: Bitboard, // pieces giving check to opponents king
 }
 
 impl Presence {
@@ -119,6 +120,7 @@ impl Presence {
             queen: Bitboard::empty(),
             king: Bitboard::empty(),
             all: Bitboard::empty(),
+            checkers: Bitboard::empty(),
         }
     }
 
@@ -223,7 +225,87 @@ impl Board {
         ours.all |= bitboard![on];
         *ours.for_piece_mut(piece.piece()) |= bitboard![on];
 
+        // Hack
+        new.compute_checkers(A1, on, piece).unwrap();
+
         new
+    }
+
+    pub fn compute_checkers(&mut self, from: Square, to: Square, piece: Piece) -> Result<()> {
+        // TODO: ensure en passant is handled correctly
+
+        let mut checking_me = Bitboard::empty();
+        let mut checking_them = Bitboard::empty();
+
+        // Two phases
+        // Compute who is checking me after I make this move
+
+        if piece.piece() == KING {
+            // is any other piece attacking the new square?
+            // TODO: can this be made any more efficient
+
+            for mv in self.attacking_moves_by_color(to, piece.color().opposite()) {
+                match mv {
+                    Move::Single {
+                        from: checking_from,
+                        ..
+                    }
+                    | Move::Promote {
+                        from: checking_from,
+                        ..
+                    } => checking_me |= bitboard![checking_from],
+                    _ => (),
+                }
+            }
+        } else {
+            // was the moving piece actually pinned on the from square?
+            // any discoveries?
+
+            // find ray from my king to moved piece (optional)
+
+            // compute slider attacks from moved piece to opponent along same ray
+
+            let attackers = self.presence_for(piece.color().opposite());
+            let defenders = self.presence_for(piece.color());
+            checking_me |= revealed_attacks(from, attackers, defenders);
+        }
+
+        // Compute who I check after making this move
+        // does the piece attack oppenents king from new square?
+
+        let my_new_attacks = match piece.piece() {
+            PAWN => self._pawn_attacks(to, &piece),
+            BISHOP => self._bishop_attacks(to, &piece),
+            KNIGHT => self._knight_attacks(to, &piece),
+            ROOK => self._rook_attacks(to, &piece),
+            QUEEN => self._queen_attacks(to, &piece),
+            KING => self._king_attacks(to, &piece), // should always be empty, otherwise illegal
+        };
+
+        let theirs = self.presence_for(piece.color().opposite());
+        if (my_new_attacks & theirs.king).non_empty() {
+            checking_them |= bitboard![to];
+        }
+
+        // TODO: did my move reveal any attacks on opponents king?
+        {
+            let attackers = self.presence_for(piece.color());
+            let defenders = self.presence_for(piece.color().opposite());
+            checking_them |= revealed_attacks(from, attackers, defenders);
+        }
+        // TODO: should any old data be maintained? or is this safe to start
+        // from scratch, assuming that any previous checks should have been
+        // dealt with and moved away from?
+
+        // Save the state:
+
+        let mut ours = self.presence_for_mut(piece.color());
+        ours.checkers = checking_them;
+
+        let mut theirs = self.presence_for_mut(piece.color().opposite());
+        theirs.checkers = checking_me;
+
+        Ok(())
     }
 
     // Incremental move. Updates all internal state for the board: mailbox,
@@ -232,8 +314,15 @@ impl Board {
         let mut new = self.clone();
 
         match mv {
-            Move::Single { from, to } => new.move_piece(from, to),
-            Move::Promote { from, to, piece } => new.promote_pawn(from, to, piece),
+            Move::Single { from, to } => {
+                let piece = new.move_piece(from, to)?;
+                new.compute_checkers(from, to, piece)
+            }
+            Move::Promote { from, to, piece } => {
+                new.promote_pawn(from, to, piece)?;
+                new.compute_checkers(from, to, piece)
+            }
+            // TODO: compute checkers for castled rooks
             Move::CastleKingside => new.castle_kingside(new.color_to_move),
             Move::CastleQueenside => new.castle_queenside(new.color_to_move),
         }?;
@@ -413,7 +502,8 @@ impl Board {
         allowed
     }
 
-    fn move_piece(&mut self, from: Square, to: Square) -> Result<()> {
+    fn move_piece(&mut self, from: Square, to: Square) -> Result<Piece> {
+        // TODO: verify that move is valid?
         if let Some(Piece(piece, color)) = self.piece_on_square(from) {
             if color != self.color_to_move {
                 return Err(IllegalMove(format!(
@@ -494,13 +584,11 @@ impl Board {
                 *theirs.for_piece_mut(captured.piece()) ^= to_mask;
                 theirs.all ^= to_mask;
             }
+
+            return Ok(Piece(piece, color));
         } else {
             return Err(NoPieceOnFromSquare(from));
         }
-
-        // TODO: verify that move is valid.
-
-        Ok(())
     }
 
     fn promote_pawn(&mut self, from: Square, to: Square, promote_to: Piece) -> Result<()> {
@@ -587,20 +675,22 @@ impl Board {
     }
 
     pub fn is_in_check(&self, color: Color) -> Result<bool> {
-        let mut king_squares = self.presence_for(color).king.squares();
+        // let mut king_squares = self.presence_for(color).king.squares();
 
-        let king_square = king_squares
-            .next()
-            .ok_or_else(|| IllegalState(format!("Board is missing KING of color {}", color)))?;
+        // let king_square = king_squares
+        //     .next()
+        //     .ok_or_else(|| IllegalState(format!("Board is missing KING of color {}", color)))?;
 
-        if king_squares.next().is_some() {
-            return Err(IllegalState(format!(
-                "Board has more than on KING of color {}",
-                color
-            )));
-        }
+        // if king_squares.next().is_some() {
+        //     return Err(IllegalState(format!(
+        //         "Board has more than on KING of color {}",
+        //         color
+        //     )));
+        // }
 
-        Ok(self.attacked_by_color(king_square, color.opposite()))
+        // Ok(self.attacked_by_color(king_square, color.opposite()))
+
+        Ok(self.presence_for(color.opposite()).checkers.non_empty())
     }
 
     // Attacking moves are a subset of other moves.
@@ -2693,4 +2783,84 @@ fn compute_open_files() {
     let board =
         crate::fen::parse("3q1rk1/1pp1p1pp/2np4/8/6b1/2N2N2/1PPPP1P1/R1BQK2R w KQ - 0 1").unwrap();
     assert_eq!(board.open_files(), A_FILE | F_FILE)
+}
+
+fn compute_attacks(
+    from: Square,
+    rays: &[Bitboard; 64],
+    same_color: Bitboard,
+    other_color: Bitboard,
+    bitscan: fn(Bitboard) -> Option<Square>,
+) -> Bitboard {
+    let intersections = rays[from.index()] & (same_color | other_color);
+
+    !same_color
+        & match bitscan(intersections) {
+            Some(blocker) => rays[from.index()] & !rays[blocker.index()],
+            None => rays[from.index()],
+        }
+}
+
+fn revealed_attacks(
+    from: Square, // revealed after piece vacates this square
+    attackers: &Presence,
+    defenders: &Presence,
+) -> Bitboard {
+    // todo ensure only one
+
+    // HACK fix this, only in place to make fen setup work
+    let defended_king_square = match defenders.king.squares().next() {
+        Some(s) => s,
+        _ => return Bitboard::empty(),
+    };
+
+    let delta_y = from.rank().index() as i8 - defended_king_square.rank().index() as i8;
+    let delta_x = from.file().index() as i8 - defended_king_square.file().index() as i8;
+
+    // A1 -> A4
+    let rays: Option<(&[Bitboard; 64], fn(Bitboard) -> Option<Square>)> = if delta_x == 0 {
+        if delta_y > 0 {
+            Some((&PRECOMPUTED_BITBOARDS.rays.north, |b| b.bitscan_forward()))
+        } else {
+            Some((&PRECOMPUTED_BITBOARDS.rays.south, |b| b.bitscan_backward()))
+        }
+    } else if delta_y == 0 {
+        if delta_x > 0 {
+            Some((&PRECOMPUTED_BITBOARDS.rays.east, |b| b.bitscan_forward()))
+        } else {
+            Some((&PRECOMPUTED_BITBOARDS.rays.west, |b| b.bitscan_backward()))
+        }
+    } else if delta_y.abs() == delta_x.abs() {
+        if delta_x > 0 && delta_y > 0 {
+            Some((&PRECOMPUTED_BITBOARDS.rays.north_east, |b| {
+                b.bitscan_forward()
+            }))
+        } else if delta_x > 0 && delta_y < 0 {
+            Some((&PRECOMPUTED_BITBOARDS.rays.south_east, |b| {
+                b.bitscan_backward()
+            }))
+        } else if delta_x < 0 && delta_y < 0 {
+            Some((&PRECOMPUTED_BITBOARDS.rays.south_west, |b| {
+                b.bitscan_backward()
+            }))
+        } else {
+            Some((&PRECOMPUTED_BITBOARDS.rays.north_west, |b| {
+                b.bitscan_forward()
+            }))
+        }
+    } else {
+        None
+    };
+
+    if let Some((rays, bitscan)) = rays {
+        compute_attacks(
+            defended_king_square,
+            rays,
+            defenders.all,
+            attackers.all,
+            bitscan,
+        ) & attackers.all
+    } else {
+        Bitboard::empty()
+    }
 }
