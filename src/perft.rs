@@ -5,6 +5,8 @@ use crate::color::*;
 use crate::fen;
 use crate::mv::Move;
 #[cfg(test)]
+use crate::square::*;
+#[cfg(test)]
 use colored::Colorize;
 #[cfg(test)]
 use itertools::Itertools;
@@ -205,6 +207,25 @@ macro_rules! perft_test {
             #[test]
             fn [<$fen:lower _depth_ $depth>]() {
                 compare_to_stockfish($fen, Vec::new(), $depth);
+            }
+        }
+    };
+}
+
+/*
+ * Helper to assist with debugging. Narrows the perft search tree to the specified moves.
+ */
+#[macro_export]
+macro_rules! perft_debug {
+    ( fen=$fen:ident, depth=$depth:literal, moves=$moves:stmt) => {
+        paste::item! {
+            #[test]
+            fn [<$fen:lower _depth_ $depth _debug>]() {
+                compare_to_stockfish(
+                    $fen,
+                    $moves.into_iter().map(|m| m.into()).collect(),
+                    $depth - $moves.len()
+                );
             }
         }
     };
