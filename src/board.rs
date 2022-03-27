@@ -718,6 +718,7 @@ impl Board {
             .chain(self.all_pawn_advances(color));
 
         re_capturing_moves
+            .chain(capturing_moves)
             .chain(if self.can_castle_kingside(color) {
                 vec![Move::CastleKingside].into_iter()
             } else {
@@ -728,7 +729,6 @@ impl Board {
             } else {
                 Vec::new().into_iter()
             })
-            .chain(capturing_moves)
             .chain(non_capturing_moves)
     }
 
