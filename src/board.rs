@@ -321,10 +321,10 @@ impl Board {
         {
             let attackers = self.presence_for(piece.color());
             let defenders = self.presence_for(piece.color().opposite());
-            checking_them |= revealed_attacks(from, attackers, defenders);
+            checking_them |= revealed_attacks(from, to, attackers, defenders);
 
             if let Some(captured_en_passant) = captured_en_passant {
-                checking_them |= revealed_attacks(captured_en_passant, attackers, defenders);
+                checking_them |= revealed_attacks(captured_en_passant, to, attackers, defenders);
             }
         }
         // TODO: should any old data be maintained? or is this safe to start
@@ -902,8 +902,8 @@ impl Board {
                     // TODO; verify en passant moves with less overhhead?
                     moved_board_is_in_check(board, mv, color)
                 }
-                Move::Single { from, .. } | Move::Promote { from, .. } => {
-                    revealed_attacks(*from, attackers, defenders).non_empty()
+                Move::Single { from, to } | Move::Promote { from, to, .. } => {
+                    revealed_attacks(*from, *to, attackers, defenders).non_empty()
                 }
                 _ => false,
             }
@@ -2940,6 +2940,7 @@ fn compute_attacks(
 
 fn revealed_attacks(
     from: Square, // revealed after piece vacates this square
+    to: Square,
     attackers: &Presence,
     defenders: &Presence,
 ) -> Bitboard {
@@ -3030,7 +3031,8 @@ fn revealed_attacks(
         let attacks = compute_attacks(
             defended_king_square,
             rays,
-            defenders.all & !bitboard![from], // unset the from square. Can't use XOR because can be called w/ piece already not set?
+            // unset the from square. Can't use XOR because can be called w/ piece already not set?            // also make sure the to square _is_ set, in case of move generation when the presence board is not yet updated
+            (defenders.all | bitboard![to]) & !bitboard![from],
             attackers.all,
             bitscan,
         );
