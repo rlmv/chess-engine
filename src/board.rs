@@ -150,19 +150,15 @@ fn compute_attacks(
     rays: &[Bitboard; 64],
     same_color: Bitboard,
     other_color: Bitboard,
-    bitscan: fn(Bitboard) -> Option<Square>,
+    unchecked_bitscan: fn(Bitboard) -> Square,
     backstop: Square,
 ) -> Bitboard {
-    let outer = A_FILE | H_FILE | RANK_1 | RANK_8;
-
     let intersections = rays[from.index()] & (same_color | other_color);
 
-    let blocker = bitscan(intersections | bitboard![backstop]);
-
     // Because the backstop is included above, we know that at least one bit
-    // will be set on the board, hence can unwrap the option without a branch
-    debug_assert!(blocker.is_some());
-    let blocker = unsafe { blocker.unwrap_unchecked() };
+    // will be set on the board, hence can use the unchecked bitscans
+
+    let blocker = unchecked_bitscan(intersections | bitboard![backstop]);
 
     !same_color & rays[from.index()] & !rays[blocker.index()]
 }
@@ -1056,28 +1052,28 @@ impl Board {
             &PRECOMPUTED_BITBOARDS.rays.north,
             same_color,
             other_color,
-            |b| b.bitscan_forward(),
+            |b| b.bitscan_forward_unchecked(),
             H8,
         ) | compute_attacks(
             from,
             &PRECOMPUTED_BITBOARDS.rays.east,
             same_color,
             other_color,
-            |b| b.bitscan_forward(),
+            |b| b.bitscan_forward_unchecked(),
             H8,
         ) | compute_attacks(
             from,
             &PRECOMPUTED_BITBOARDS.rays.south,
             same_color,
             other_color,
-            |b| b.bitscan_backward(),
+            |b| b.bitscan_backward_unchecked(),
             A1,
         ) | compute_attacks(
             from,
             &PRECOMPUTED_BITBOARDS.rays.west,
             same_color,
             other_color,
-            |b| b.bitscan_backward(),
+            |b| b.bitscan_backward_unchecked(),
             A1,
         )
     }
@@ -1108,28 +1104,28 @@ impl Board {
             &PRECOMPUTED_BITBOARDS.rays.north_west,
             same_color,
             other_color,
-            |b| b.bitscan_forward(),
+            |b| b.bitscan_forward_unchecked(),
             H8,
         ) | compute_attacks(
             from,
             &PRECOMPUTED_BITBOARDS.rays.north_east,
             same_color,
             other_color,
-            |b| b.bitscan_forward(),
+            |b| b.bitscan_forward_unchecked(),
             H8,
         ) | compute_attacks(
             from,
             &PRECOMPUTED_BITBOARDS.rays.south_east,
             same_color,
             other_color,
-            |b| b.bitscan_backward(),
+            |b| b.bitscan_backward_unchecked(),
             A1,
         ) | compute_attacks(
             from,
             &PRECOMPUTED_BITBOARDS.rays.south_west,
             same_color,
             other_color,
-            |b| b.bitscan_backward(),
+            |b| b.bitscan_backward_unchecked(),
             A1,
         )
     }

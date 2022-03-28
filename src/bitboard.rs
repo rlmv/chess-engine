@@ -210,20 +210,36 @@ impl Bitboard {
 
     // least significant set bit
     pub fn bitscan_forward(&self) -> Option<Square> {
-        if self.is_empty() {
-            None
-        } else {
-            Some(Square::from_index(self.0.trailing_zeros() as usize))
-        }
+        self.lowest_set_bit().squares().next()
+    }
+
+    pub fn bitscan_forward_unchecked(&self) -> Square {
+        Square::from_index(self.0.trailing_zeros() as usize)
+    }
+
+    // most significant set bit
+    pub fn bitscan_backward_unchecked(&self) -> Square {
+        Square::from_index(63 - self.0.leading_zeros() as usize)
+    }
+
+    pub fn lowest_set_bit(&self) -> Bitboard {
+        Bitboard(self.0 & self.0.wrapping_neg())
+    }
+
+    pub fn highest_set_bit(&self) -> Bitboard {
+        const MASK: u64 = 0x1;
+        let leading = (self.0 | MASK).leading_zeros();
+
+        let most_significant: u64 = 0x8000000000000000;
+        let bit = most_significant >> leading;
+
+        // if mask bit is not set in original board, then unset in output
+        Bitboard(bit & ((self.0 & MASK) | !MASK))
     }
 
     // most significant set bit
     pub fn bitscan_backward(&self) -> Option<Square> {
-        if self.is_empty() {
-            None
-        } else {
-            Some(Square::from_index(63 - self.0.leading_zeros() as usize))
-        }
+        self.highest_set_bit().squares().next()
     }
 
     // Some interesting references regarding efficient asm instructions
@@ -396,4 +412,20 @@ fn test_precompute_bitboards() {
     }
 
     // assert!(false);
+}
+
+#[test]
+fn test_highest_set_bit() {
+    assert_eq!(bitboard![C8, A2].highest_set_bit(), bitboard![C8]);
+    assert_eq!(bitboard![H8, C8, A2].highest_set_bit(), bitboard![H8]);
+    assert_eq!(bitboard![A1].highest_set_bit(), bitboard![A1]);
+    assert_eq!(bitboard![].highest_set_bit(), bitboard![]);
+}
+
+#[test]
+fn test_lowest_set_bit() {
+    assert_eq!(bitboard![C8, A2].lowest_set_bit(), bitboard![A2]);
+    assert_eq!(bitboard![H8, C8, A1].lowest_set_bit(), bitboard![A1]);
+    assert_eq!(bitboard![A1].lowest_set_bit(), bitboard![A1]);
+    assert_eq!(bitboard![].lowest_set_bit(), bitboard![]);
 }
