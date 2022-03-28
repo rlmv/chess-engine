@@ -855,9 +855,35 @@ impl Board {
             })
             .chain(self.all_pawn_advances(color));
 
-        fn reveals_check(mv: &Move, attackers: &Presence, defenders: &Presence) -> bool {
+        fn reveals_check(
+            board: &Board,
+            mv: &Move,
+            attackers: &Presence,
+            defenders: &Presence,
+            color: Color,
+            en_passant_target: Option<Square>,
+        ) -> bool {
             dbg!(mv);
             match mv {
+                Move::Single { from, to } if Some(*to) == en_passant_target => {
+                    // let captured_en_passant = match color {
+                    //     WHITE => Square::from_index(to.index() - 8),
+                    //     BLACK => Square::from_index(to.index() + 8),
+                    // };
+
+                    // dbg!("en passant");
+                    // println!("{}", attackers.pawn);
+                    // println!("{}", defenders.pawn);
+
+                    // dbg!(
+                    //     revealed_attacks(*from, attackers, defenders).non_empty()
+                    //         && revealed_attacks(captured_en_passant, attackers, defenders)
+                    //             .non_empty()
+                    // )
+
+                    // TODO; verify en passant moves with less overhhead?
+                    moved_board_is_in_check(board, mv, color)
+                }
                 Move::Single { from, .. } | Move::Promote { from, .. } => {
                     dbg!(dbg!(revealed_attacks(*from, attackers, defenders)).non_empty())
                 }
@@ -881,9 +907,18 @@ impl Board {
                 Vec::new().into_iter()
             })
             .chain(non_capturing_moves)
-            .filter(|mv| dbg!(!reveals_check(mv, attackers, defenders)));
+            .filter(move |mv| {
+                dbg!(!reveals_check(
+                    self,
+                    mv,
+                    attackers,
+                    defenders,
+                    color,
+                    self.en_passant_target
+                ))
+            });
 
-        fn moved_board_is_not_in_check(board: &Board, mv: &Move, color: Color) -> bool {
+        fn moved_board_is_in_check(board: &Board, mv: &Move, color: Color) -> bool {
             let mut new = board.clone();
             match *mv {
                 Move::Single { from, to } => {
@@ -898,7 +933,7 @@ impl Board {
             }
 
             let king_square = new.presence_for(color).king.squares().next().unwrap();
-            !new.attacked_by_color(king_square, color.opposite())
+            new.attacked_by_color(king_square, color.opposite())
         }
 
         // currently in check.
@@ -907,7 +942,7 @@ impl Board {
         // hack hack hack
         if self.presence_for(color.opposite()).checkers.popcnt() == 1 {
             return Box::new(
-                pseudo_legal_moves.filter(move |mv| moved_board_is_not_in_check(self, mv, color)),
+                pseudo_legal_moves.filter(move |mv| !moved_board_is_in_check(self, mv, color)),
             );
         }
 
