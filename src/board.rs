@@ -259,10 +259,6 @@ impl Board {
     ) -> Result<()> {
         // TODO: ensure en passant is handled correctly
 
-        dbg!(from, to);
-        println!("{}", piece.color());
-        println!("{}", self);
-
         let mut checking_me = Bitboard::empty();
         let mut checking_them = Bitboard::empty();
 
@@ -339,8 +335,6 @@ impl Board {
         let mut theirs = self.presence_for_mut(piece.color().opposite());
         theirs.checkers = checking_me;
 
-        println!("checking_them\n{}", checking_them);
-        println!("checking_me\n{}", checking_me);
         Ok(())
     }
 
@@ -930,14 +924,14 @@ impl Board {
             })
             .chain(non_capturing_moves)
             .filter(move |mv| {
-                dbg!(!reveals_check(
+                !reveals_check(
                     self,
                     mv,
                     attackers,
                     defenders,
                     color,
-                    self.en_passant_target
-                ))
+                    self.en_passant_target,
+                )
             });
 
         fn moved_board_is_in_check(board: &Board, mv: &Move, color: Color) -> bool {
@@ -2833,8 +2827,6 @@ fn test_en_passant_capture_white() {
         crate::fen::parse("rnbqkbnr/2ppp1pp/1p6/p3PpP1/8/8/PPPP1P1P/RNBQKBNR w KQkq f6 0 5")
             .unwrap();
 
-    println!("{}", board);
-    dbg!(board.legal_moves(G5).unwrap());
     assert!(board
         .legal_moves(G5)
         .unwrap()
@@ -2956,15 +2948,10 @@ fn revealed_attacks(
         _ => return Bitboard::empty(),
     };
 
-    dbg!(defended_king_square);
-
     // compute ray from king to the vacated square
 
     let delta_y = from.rank().index() as i8 - defended_king_square.rank().index() as i8;
     let delta_x = from.file().index() as i8 - defended_king_square.file().index() as i8;
-
-    dbg!(delta_x);
-    dbg!(delta_y);
 
     // A1 -> A4
     let rays: Option<(
@@ -2996,7 +2983,7 @@ fn revealed_attacks(
             Some((
                 &PRECOMPUTED_BITBOARDS.rays.west,
                 |b| b.bitscan_backward(),
-                dbg!(attackers.rook | attackers.queen),
+                attackers.rook | attackers.queen,
             ))
         }
     } else if delta_y.abs() == delta_x.abs() {
@@ -3030,8 +3017,6 @@ fn revealed_attacks(
     };
 
     if let Some((rays, bitscan, attacking_pieces)) = rays {
-        dbg!(attacking_pieces);
-
         let attacks = compute_attacks(
             defended_king_square,
             rays,
@@ -3040,9 +3025,6 @@ fn revealed_attacks(
             attackers.all,
             bitscan,
         );
-
-        println!("attacks\n{}", attacks);
-        println!("attacking_pieces\n{}", attacking_pieces);
 
         attacks & attacking_pieces
         // TODO: must be the specific piece type
