@@ -225,8 +225,27 @@ impl Board {
         ours.all |= bitboard![on];
         *ours.for_piece_mut(piece.piece()) |= bitboard![on];
 
-        // Hack
-        new.compute_checkers(A1, on, piece, None).unwrap();
+        if let Some(white_king_square) = new.presence_for(WHITE).king.squares().next() {
+            let mut checkers = Bitboard::empty();
+            for mv in new.attacking_moves_by_color(white_king_square, BLACK) {
+                if let Move::Single { from, .. } | Move::Promote { from, .. } = mv {
+                    checkers |= bitboard![from]
+                }
+            }
+
+            new.presence_black.checkers = checkers
+        }
+
+        if let Some(black_king_square) = new.presence_for(BLACK).king.squares().next() {
+            let mut checkers = Bitboard::empty();
+            for mv in new.attacking_moves_by_color(black_king_square, WHITE) {
+                if let Move::Single { from, .. } | Move::Promote { from, .. } = mv {
+                    checkers |= bitboard![from]
+                }
+            }
+
+            new.presence_white.checkers = checkers
+        }
 
         new
     }
@@ -863,7 +882,6 @@ impl Board {
             color: Color,
             en_passant_target: Option<Square>,
         ) -> bool {
-            dbg!(mv);
             match mv {
                 Move::Single { from, to } if Some(*to) == en_passant_target => {
                     // let captured_en_passant = match color {
@@ -885,7 +903,7 @@ impl Board {
                     moved_board_is_in_check(board, mv, color)
                 }
                 Move::Single { from, .. } | Move::Promote { from, .. } => {
-                    dbg!(dbg!(revealed_attacks(*from, attackers, defenders)).non_empty())
+                    revealed_attacks(*from, attackers, defenders).non_empty()
                 }
                 _ => false,
             }
