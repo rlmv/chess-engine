@@ -902,6 +902,10 @@ impl Board {
                     // TODO; verify en passant moves with less overhhead?
                     moved_board_is_in_check(board, mv, color)
                 }
+                // if moving king, just recompute the checks
+                Move::Single { from, to } if (bitboard![*from] & defenders.king).non_empty() => {
+                    moved_board_is_in_check(board, mv, color)
+                }
                 Move::Single { from, to } | Move::Promote { from, to, .. } => {
                     revealed_attacks(*from, *to, attackers, defenders).non_empty()
                 }
