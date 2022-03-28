@@ -226,14 +226,21 @@ impl Board {
         *ours.for_piece_mut(piece.piece()) |= bitboard![on];
 
         // Hack
-        new.compute_checkers(A1, on, piece).unwrap();
+        new.compute_checkers(A1, on, piece, None).unwrap();
 
         new
     }
 
-    pub fn compute_checkers(&mut self, from: Square, to: Square, piece: Piece) -> Result<()> {
+    pub fn compute_checkers(
+        &mut self,
+        from: Square,
+        to: Square,
+        piece: Piece,
+        captured_en_passant: Option<Square>,
+    ) -> Result<()> {
         // TODO: ensure en passant is handled correctly
 
+        dbg!(from, to);
         println!("{}", piece.color());
         println!("{}", self);
 
@@ -243,35 +250,36 @@ impl Board {
         // Two phases
         // Compute who is checking me after I make this move
 
-        if piece.piece() == KING {
-            // is any other piece attacking the new square?
-            // TODO: can this be made any more efficient
+        // if piece.piece() == KING {
+        //     // is any other piece attacking the new square?
+        //     // TODO: can this be made any more efficient
 
-            for mv in self.attacking_moves_by_color(to, piece.color().opposite()) {
-                match mv {
-                    Move::Single {
-                        from: checking_from,
-                        ..
-                    }
-                    | Move::Promote {
-                        from: checking_from,
-                        ..
-                    } => checking_me |= bitboard![checking_from],
-                    _ => (),
-                }
-            }
-        } else {
-            // was the moving piece actually pinned on the from square?
-            // any discoveries?
+        //     for mv in self.attacking_moves_by_color(to, piece.color().opposite()) {
+        //         dbg!(mv);
+        //         match mv {
+        //             Move::Single {
+        //                 from: checking_from,
+        //                 ..
+        //             }
+        //             | Move::Promote {
+        //                 from: checking_from,
+        //                 ..
+        //             } => checking_me |= bitboard![checking_from],
+        //             _ => (),
+        //         }
+        //     }
+        // } else {
+        //     // was the moving piece actually pinned on the from square?
+        //     // any discoveries?
 
-            // find ray from my king to moved piece (optional)
+        //     // find ray from my king to moved piece (optional)
 
-            // compute slider attacks from moved piece to opponent along same ray
+        //     // compute slider attacks from moved piece to opponent along same ray
 
-            let attackers = self.presence_for(piece.color().opposite());
-            let defenders = self.presence_for(piece.color());
-            checking_me |= revealed_attacks(from, attackers, defenders);
-        }
+        //     let attackers = self.presence_for(piece.color().opposite());
+        //     let defenders = self.presence_for(piece.color());
+        //     checking_me |= revealed_attacks(from, attackers, defenders);
+        // }
 
         // Compute who I check after making this move
         // does the piece attack oppenents king from new square?
@@ -295,6 +303,10 @@ impl Board {
             let attackers = self.presence_for(piece.color());
             let defenders = self.presence_for(piece.color().opposite());
             checking_them |= revealed_attacks(from, attackers, defenders);
+
+            if let Some(captured_en_passant) = captured_en_passant {
+                checking_them |= revealed_attacks(captured_en_passant, attackers, defenders);
+            }
         }
         // TODO: should any old data be maintained? or is this safe to start
         // from scratch, assuming that any previous checks should have been
@@ -308,8 +320,8 @@ impl Board {
         let mut theirs = self.presence_for_mut(piece.color().opposite());
         theirs.checkers = checking_me;
 
-        println!("{}", checking_them);
-        println!("{}", checking_me);
+        println!("checking_them\n{}", checking_them);
+        println!("checking_me\n{}", checking_me);
         Ok(())
     }
 
@@ -320,12 +332,12 @@ impl Board {
 
         match mv {
             Move::Single { from, to } => {
-                let piece = new.move_piece(from, to)?;
-                new.compute_checkers(from, to, piece)
+                let (piece, captured_en_passant) = new.move_piece(from, to)?;
+                new.compute_checkers(from, to, piece, captured_en_passant)
             }
             Move::Promote { from, to, piece } => {
                 new.promote_pawn(from, to, piece)?;
-                new.compute_checkers(from, to, piece)
+                new.compute_checkers(from, to, piece, None)
             }
             // TODO: compute checkers for castled rooks
             Move::CastleKingside => new.castle_kingside(new.color_to_move),
@@ -507,7 +519,7 @@ impl Board {
         allowed
     }
 
-    fn move_piece(&mut self, from: Square, to: Square) -> Result<Piece> {
+    fn move_piece(&mut self, from: Square, to: Square) -> Result<(Piece, Option<Square>)> {
         // TODO: verify that move is valid?
         if let Some(Piece(piece, color)) = self.piece_on_square(from) {
             if color != self.color_to_move {
@@ -516,6 +528,8 @@ impl Board {
                     from, to, color, self.color_to_move
                 )));
             }
+
+            let mut captured_en_passant: Option<Square> = None;
 
             // Set en passant target
             if piece == PAWN
@@ -547,6 +561,8 @@ impl Board {
                 let mask = bitboard!(captured_square);
                 theirs.pawn ^= mask;
                 theirs.all ^= mask;
+
+                captured_en_passant = Some(captured_square);
             }
 
             // Update castling - moving off original squares
@@ -590,7 +606,7 @@ impl Board {
                 theirs.all ^= to_mask;
             }
 
-            return Ok(Piece(piece, color));
+            return Ok((Piece(piece, color), captured_en_passant));
         } else {
             return Err(NoPieceOnFromSquare(from));
         }
@@ -756,8 +772,35 @@ impl Board {
         &self,
         color: Color,
         history: &TraversalPath,
-    ) -> impl Iterator<Item = Move> + '_ {
+    ) -> Box<dyn Iterator<Item = Move> + '_> {
         // TODO: check color, turn
+
+        fn legal_king_attacks(
+            board: &Board,
+            color: Color,
+        ) -> impl Iterator<Item = (Square, Bitboard)> {
+            let (from, attacks) = board.all_king_attacks(color).next().unwrap(); // TODO
+
+            let mut legal_moves = Bitboard::empty();
+
+            for to in attacks.squares() {
+                if !board.attacked_by_color(to, color.opposite()) {
+                    legal_moves |= bitboard![to]
+                }
+            }
+
+            std::iter::once((from, legal_moves))
+        }
+
+        // double check, I must move my king
+        if self.presence_for(color.opposite()).checkers.popcnt() > 1 {
+            return Box::new(
+                self.all_king_attacks(color)
+                    .flat_map(|(from, to)| to.squares().map(move |to| (from, to)))
+                    .filter(move |(from, to)| !self.attacked_by_color(*to, color.opposite()))
+                    .map(move |(from, to)| Move::Single { from, to }),
+            );
+        }
 
         // TODO: refactor this to remove the unnecessary filtering
 
@@ -780,7 +823,7 @@ impl Board {
                     .chain(self.all_bishop_attacks(color))
                     .chain(self.all_rook_attacks(color))
                     .chain(self.all_queen_attacks(color))
-                    .chain(self.all_king_attacks(color))
+                    .chain(legal_king_attacks(self, color))
                     .map(move |(from, attacks)| {
                         (from, attacks & self.presence_for(color.opposite()).all)
                     })
@@ -803,7 +846,7 @@ impl Board {
             .chain(self.all_rook_attacks(color))
             .chain(self.all_knight_attacks(color))
             .chain(self.all_queen_attacks(color))
-            .chain(self.all_king_attacks(color))
+            .chain(legal_king_attacks(self, color))
             .map(move |(from, attacks)| (from, attacks & !self.presence_for(color.opposite()).all))
             .flat_map(|(from, quiet_moves)| {
                 quiet_moves
@@ -812,7 +855,20 @@ impl Board {
             })
             .chain(self.all_pawn_advances(color));
 
-        re_capturing_moves
+        fn reveals_check(mv: &Move, attackers: &Presence, defenders: &Presence) -> bool {
+            dbg!(mv);
+            match mv {
+                Move::Single { from, .. } | Move::Promote { from, .. } => {
+                    dbg!(dbg!(revealed_attacks(*from, attackers, defenders)).non_empty())
+                }
+                _ => false,
+            }
+        }
+
+        let attackers = self.presence_for(color.opposite());
+        let defenders = self.presence_for(color);
+
+        let pseudo_legal_moves = re_capturing_moves
             .chain(capturing_moves)
             .chain(if self.can_castle_kingside(color) {
                 vec![Move::CastleKingside].into_iter()
@@ -825,6 +881,37 @@ impl Board {
                 Vec::new().into_iter()
             })
             .chain(non_capturing_moves)
+            .filter(|mv| dbg!(!reveals_check(mv, attackers, defenders)));
+
+        fn moved_board_is_not_in_check(board: &Board, mv: &Move, color: Color) -> bool {
+            let mut new = board.clone();
+            match *mv {
+                Move::Single { from, to } => {
+                    new.move_piece(from, to).unwrap();
+                }
+                Move::Promote { from, to, piece } => {
+                    new.promote_pawn(from, to, piece).unwrap();
+                }
+                // TODO: compute checkers for castled rooks
+                Move::CastleKingside => new.castle_kingside(new.color_to_move).unwrap(),
+                Move::CastleQueenside => new.castle_queenside(new.color_to_move).unwrap(),
+            }
+
+            let king_square = new.presence_for(color).king.squares().next().unwrap();
+            !new.attacked_by_color(king_square, color.opposite())
+        }
+
+        // currently in check.
+        // only allow moves that move king away from check or *block* a sliding attack or capture the attacker
+
+        // hack hack hack
+        if self.presence_for(color.opposite()).checkers.popcnt() == 1 {
+            return Box::new(
+                pseudo_legal_moves.filter(move |mv| moved_board_is_not_in_check(self, mv, color)),
+            );
+        }
+
+        return Box::new(pseudo_legal_moves);
     }
 
     // Return all legal moves for the given square, filtering out those that result in
@@ -867,8 +954,8 @@ impl Board {
     }
 
     // Return all moves possible for the given color, including castling and promotion
-    pub fn all_moves(&self, color: Color) -> Result<impl Iterator<Item = Move> + '_> {
-        Ok(self.candidate_moves(color, &TraversalPath::head()))
+    pub fn all_moves(&self, color: Color) -> Box<dyn Iterator<Item = Move> + '_> {
+        self.candidate_moves(color, &TraversalPath::head())
     }
 
     pub fn plus_vector(s: &Square, v: &MoveVector) -> Option<Square> {
@@ -972,7 +1059,7 @@ impl Board {
 
             (en_passant_from & self.presence_for(color).pawn)
                 .squares()
-                .map(move |from| Move::Single { from, to })
+                .map(move |from| Move::Single { from, to }) // TODO: en passant move type
         })
     }
 
@@ -1426,7 +1513,7 @@ impl Board {
 
         debug!("{}: In check. Evaluating for checkmate", color);
 
-        for mv in self.all_moves(color)? {
+        for mv in self.all_moves(color).into_iter() {
             let moved_board = self.make_move(mv)?;
 
             // At least one way out!
@@ -1623,7 +1710,6 @@ fn test_castle_kingside_white() {
 
     assert!(board
         .all_moves(Color::WHITE)
-        .unwrap()
         .collect::<Vec<Move>>()
         .contains(&Move::CastleKingside));
 
@@ -1646,7 +1732,6 @@ fn test_castle_kingside_white_not_allowed_if_king_has_moved() {
 
     assert!(!board
         .all_moves(Color::WHITE)
-        .unwrap()
         .collect::<Vec<Move>>()
         .contains(&Move::CastleKingside));
 }
@@ -1662,7 +1747,6 @@ fn test_castle_kingside_white_not_allowed_if_e1_under_attack() {
 
     assert!(!board
         .all_moves(Color::WHITE)
-        .unwrap()
         .collect::<Vec<Move>>()
         .contains(&Move::CastleKingside));
 }
@@ -1678,7 +1762,6 @@ fn test_castle_kingside_white_not_allowed_if_f1_under_attack() {
 
     assert!(!board
         .all_moves(Color::WHITE)
-        .unwrap()
         .collect::<Vec<Move>>()
         .contains(&Move::CastleKingside));
 }
@@ -1694,7 +1777,6 @@ fn test_castle_kingside_white_not_allowed_if_g1_under_attack() {
 
     assert!(!board
         .all_moves(Color::WHITE)
-        .unwrap()
         .collect::<Vec<Move>>()
         .contains(&Move::CastleKingside));
 }
@@ -1709,7 +1791,6 @@ fn test_castle_queenside_white() {
 
     assert!(board
         .all_moves(Color::WHITE)
-        .unwrap()
         .collect::<Vec<Move>>()
         .contains(&Move::CastleQueenside));
 
@@ -1732,7 +1813,6 @@ fn test_castle_queenside_white_not_allowed_if_king_has_moved() {
 
     assert!(!board
         .all_moves(Color::WHITE)
-        .unwrap()
         .collect::<Vec<Move>>()
         .contains(&Move::CastleQueenside));
 }
@@ -1747,7 +1827,6 @@ fn test_castle_kingside_black() {
 
     assert!(board
         .all_moves(Color::BLACK)
-        .unwrap()
         .collect::<Vec<Move>>()
         .contains(&Move::CastleKingside));
 
@@ -1774,7 +1853,6 @@ fn test_castle_queenside_black() {
 
     assert!(board
         .all_moves(Color::BLACK)
-        .unwrap()
         .collect::<Vec<Move>>()
         .contains(&Move::CastleQueenside));
 
@@ -2762,7 +2840,6 @@ fn test_castle_bug() {
     assert!(!moved_board.can_castle_kingside(BLACK));
     assert!(moved_board
         .all_moves(moved_board.color_to_move)
-        .unwrap()
         .find(|mv| *mv == Move::CastleKingside)
         .is_none());
 }
@@ -2828,6 +2905,9 @@ fn revealed_attacks(
     let delta_y = from.rank().index() as i8 - defended_king_square.rank().index() as i8;
     let delta_x = from.file().index() as i8 - defended_king_square.file().index() as i8;
 
+    dbg!(delta_x);
+    dbg!(delta_y);
+
     // A1 -> A4
     let rays: Option<(
         &[Bitboard; 64],
@@ -2858,7 +2938,7 @@ fn revealed_attacks(
             Some((
                 &PRECOMPUTED_BITBOARDS.rays.west,
                 |b| b.bitscan_backward(),
-                attackers.rook | attackers.queen,
+                dbg!(attackers.rook | attackers.queen),
             ))
         }
     } else if delta_y.abs() == delta_x.abs() {
@@ -2892,13 +2972,21 @@ fn revealed_attacks(
     };
 
     if let Some((rays, bitscan, attacking_pieces)) = rays {
-        compute_attacks(
+        dbg!(attacking_pieces);
+
+        let attacks = compute_attacks(
             defended_king_square,
             rays,
-            defenders.all,
+            defenders.all & !bitboard![from], // unset the from square. Can't use XOR because can be called w/ piece already not set?
             attackers.all,
             bitscan,
-        ) & attacking_pieces // TODO: must be the specific piece type
+        );
+
+        println!("attacks\n{}", attacks);
+        println!("attacking_pieces\n{}", attacking_pieces);
+
+        attacks & attacking_pieces
+        // TODO: must be the specific piece type
     } else {
         Bitboard::empty()
     }
