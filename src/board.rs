@@ -145,6 +145,28 @@ impl Presence {
     }
 }
 
+fn compute_attacks(
+    from: Square,
+    rays: &[Bitboard; 64],
+    same_color: Bitboard,
+    other_color: Bitboard,
+    bitscan: fn(Bitboard) -> Option<Square>,
+    backstop: Square,
+) -> Bitboard {
+    let outer = A_FILE | H_FILE | RANK_1 | RANK_8;
+
+    let intersections = rays[from.index()] & (same_color | other_color);
+
+    let blocker = bitscan(intersections | bitboard![backstop]);
+
+    // Because the backstop is included above, we know that at least one bit
+    // will be set on the board, hence can unwrap the option without a branch
+    debug_assert!(blocker.is_some());
+    let blocker = unsafe { blocker.unwrap_unchecked() };
+
+    !same_color & rays[from.index()] & !rays[blocker.index()]
+}
+
 #[derive(Clone, Eq, PartialEq, Debug, Hash)]
 pub struct Board {
     pub color_to_move: Color,
@@ -1029,46 +1051,34 @@ impl Board {
             BLACK => self.presence_white.all,
         };
 
-        fn compute_attacks(
-            from: Square,
-            rays: &[Bitboard; 64],
-            same_color: Bitboard,
-            other_color: Bitboard,
-            bitscan: fn(Bitboard) -> Option<Square>,
-        ) -> Bitboard {
-            let intersections = rays[from.index()] & (same_color | other_color);
-
-            !same_color
-                & match bitscan(intersections) {
-                    Some(blocker) => rays[from.index()] & !rays[blocker.index()],
-                    None => rays[from.index()],
-                }
-        }
-
         compute_attacks(
             from,
             &PRECOMPUTED_BITBOARDS.rays.north,
             same_color,
             other_color,
             |b| b.bitscan_forward(),
+            H8,
         ) | compute_attacks(
             from,
             &PRECOMPUTED_BITBOARDS.rays.east,
             same_color,
             other_color,
             |b| b.bitscan_forward(),
+            H8,
         ) | compute_attacks(
             from,
             &PRECOMPUTED_BITBOARDS.rays.south,
             same_color,
             other_color,
             |b| b.bitscan_backward(),
+            A1,
         ) | compute_attacks(
             from,
             &PRECOMPUTED_BITBOARDS.rays.west,
             same_color,
             other_color,
             |b| b.bitscan_backward(),
+            A1,
         )
     }
 
@@ -1093,46 +1103,34 @@ impl Board {
             BLACK => self.presence_white.all,
         };
 
-        fn compute_attacks(
-            from: Square,
-            rays: &[Bitboard; 64],
-            same_color: Bitboard,
-            other_color: Bitboard,
-            bitscan: fn(Bitboard) -> Option<Square>,
-        ) -> Bitboard {
-            let intersections = rays[from.index()] & (same_color | other_color);
-
-            !same_color
-                & match bitscan(intersections) {
-                    Some(blocker) => rays[from.index()] & !rays[blocker.index()],
-                    None => rays[from.index()],
-                }
-        }
-
         compute_attacks(
             from,
             &PRECOMPUTED_BITBOARDS.rays.north_west,
             same_color,
             other_color,
             |b| b.bitscan_forward(),
+            H8,
         ) | compute_attacks(
             from,
             &PRECOMPUTED_BITBOARDS.rays.north_east,
             same_color,
             other_color,
             |b| b.bitscan_forward(),
+            H8,
         ) | compute_attacks(
             from,
             &PRECOMPUTED_BITBOARDS.rays.south_east,
             same_color,
             other_color,
             |b| b.bitscan_backward(),
+            A1,
         ) | compute_attacks(
             from,
             &PRECOMPUTED_BITBOARDS.rays.south_west,
             same_color,
             other_color,
             |b| b.bitscan_backward(),
+            A1,
         )
     }
 
