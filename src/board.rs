@@ -1330,8 +1330,8 @@ impl Board {
         pv: &mut PV,
         // List of all moves made up to this point in the search tree (all ancestors)
         history: &mut History,
-        alpha_arg: Score,
-        beta_arg: Score,
+        mut alpha: Score,
+        mut beta: Score,
     ) -> Result<(Option<Move>, Score, u64)> {
         // Find all pieces
         // Generate all valid moves for those pieces.
@@ -1339,14 +1339,11 @@ impl Board {
         // Make each move - evaluate the position.
         // Pick highest scoring move
 
-        let mut alpha = alpha_arg;
-        let mut beta = beta_arg;
-
         // Leaf node, we are done.
         // Unless our king is in check, then extend the search by one ply.
 
         if depth == 0 && self.is_in_check(self.color_to_move)? {
-            return self._find_next_move(1, pv, history, alpha_arg, beta_arg);
+            return self._find_next_move(1, pv, history, alpha, beta);
         } else if depth == 0 {
             return Ok((None, evaluate_position(self, history)?, 1));
         }
