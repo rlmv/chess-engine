@@ -49,7 +49,7 @@ fn piece_value(presence: &Presence) -> i32 {
  * - passed pawns?
  * - separate scoring for different phases of the game?
  */
-pub fn evaluate_position(board: &Board, path: &TraversalPath) -> Result<Score> {
+pub fn evaluate_position(board: &Board, history: &Vec<(Move, Color)>) -> Result<Score> {
     let white_value = piece_value(&board.presence_white);
     let black_value = piece_value(&board.presence_black);
 
@@ -67,14 +67,16 @@ pub fn evaluate_position(board: &Board, path: &TraversalPath) -> Result<Score> {
     black_bonus += off_initial_square_bonus(board, BLACK, BLACK_INITIAL_SQUARES);
 
     // TODO: only if king is protected
-    let castle_bonus = path.fold_left(0, |accum, mv, color| {
-        accum
-            + match (mv, color) {
-                (Move::CastleKingside | Move::CastleQueenside, WHITE) => CASTLE_BONUS,
-                (Move::CastleKingside | Move::CastleQueenside, BLACK) => -CASTLE_BONUS,
-                _ => 0,
+    let mut castle_bonus = 0;
+
+    for (mv, color) in history {
+        if *mv == Move::CastleKingside || *mv == Move::CastleQueenside {
+            castle_bonus += match color {
+                WHITE => CASTLE_BONUS,
+                BLACK => -CASTLE_BONUS,
             }
-    });
+        }
+    }
 
     let open_files = board.open_files();
     white_bonus += open_file_bonus(open_files, board.presence_white.rook);

@@ -21,6 +21,37 @@ pub type Result<T> = std::result::Result<T, BoardError>;
 
 pub use PieceEnum::*;
 
+pub type History = Vec<(Move, Color)>;
+pub type PV = Vec<Move>;
+
+/*
+ * Convert a principal variation into a full history containing the color of
+ * each move.
+ */
+fn full_history(pv: PV, start_color: Color) -> History {
+    pv.into_iter()
+        .zip(
+            std::iter::repeat([start_color, start_color.opposite()])
+                .flat_map(|array| array.into_iter()),
+        )
+        .collect()
+}
+
+struct HistoryDisplay<'a>(&'a History);
+
+impl fmt::Display for HistoryDisplay<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for (i, (mv, _)) in self.0.iter().enumerate() {
+            if i > 0 {
+                write!(f, " ")?;
+            }
+            write!(f, "{}", mv.to_string())?;
+        }
+
+        Ok(())
+    }
+}
+
 pub fn move_generator(board: &Board, last_move: Option<Move>) -> impl Iterator<Item = Move> + '_ {
     GenIter(move || {
         let color = board.color_to_move;
@@ -842,12 +873,8 @@ impl Board {
 
     // Return all candidate moves for single pieces, allowing illegal moves
     // (e.g., that move the king into check)
-    fn candidate_moves(
-        &self,
-        color: Color,
-        history: &TraversalPath,
-    ) -> impl Iterator<Item = Move> + '_ {
-        return move_generator(self, history.peek().map(|(mv, _)| mv));
+    fn candidate_moves(&self, color: Color, history: &History) -> impl Iterator<Item = Move> + '_ {
+        return move_generator(self, history.last().map(|(mv, _)| *mv));
     }
 
     // // Return all legal moves for the given square, filtering out those that result in
@@ -865,7 +892,7 @@ impl Board {
             .piece_on_square(from)
             .ok_or(NoPieceOnFromSquare(from))?;
 
-        for mv in self.candidate_moves(color, &TraversalPath::head()) {
+        for mv in self.candidate_moves(color, &mut Vec::new()) {
             match mv {
                 Move::Promote {
                     from: source,
@@ -891,7 +918,7 @@ impl Board {
 
     // Return all moves possible for the given color, including castling and promotion
     pub fn all_moves(&self, color: Color) -> Result<impl Iterator<Item = Move> + '_> {
-        Ok(self.candidate_moves(color, &TraversalPath::head()))
+        Ok(self.candidate_moves(color, &mut Vec::new()))
     }
 
     pub fn plus_vector(s: &Square, v: &MoveVector) -> Option<Square> {
@@ -1272,25 +1299,40 @@ impl Board {
         Ok(mv.map(|m| (m, score)))
     }
 
-    pub fn find_best_move(&self, depth: u8) -> Result<(Option<Move>, Score, TraversalPath, u64)> {
-        let (mv, score, path, node_count) =
-            self._find_next_move(depth, &TraversalPath::head(), Score::MIN, Score::MAX)?;
+    pub fn find_best_move(
+        &self,
+        depth: u8,
+    ) -> Result<(Option<Move>, Score, Vec<(Move, Color)>, u64)> {
+        let mut pv: PV = Vec::new();
+        let mut history: History = Vec::new();
+
+        let (mv, score, node_count) =
+            self._find_next_move(depth, &mut pv, &mut history, Score::MIN, Score::MAX)?;
+
+        let full_pv = full_history(pv, self.color_to_move);
 
         info!(
             "Main line score={}, path={}, node_count={}",
-            score, path, node_count
+            score,
+            HistoryDisplay(&full_pv),
+            node_count
         );
 
-        Ok((mv, score, path, node_count))
+        Ok((mv, score, full_pv, node_count))
     }
 
     fn _find_next_move(
         &self,
         depth: u8,
-        path: &TraversalPath,
+        // Principal variation result, used to return the best line found in this node.
+        // Though slightly confusing, it is more efficient to pass a result
+        // buffer here instead of returning a new buffer from this function.
+        pv: &mut PV,
+        // List of all moves made up to this point in the search tree (all ancestors)
+        history: &mut History,
         alpha_arg: Score,
         beta_arg: Score,
-    ) -> Result<(Option<Move>, Score, TraversalPath, u64)> {
+    ) -> Result<(Option<Move>, Score, u64)> {
         // Find all pieces
         // Generate all valid moves for those pieces.
         // After each move, must not be in check - prune.
@@ -1304,9 +1346,9 @@ impl Board {
         // Unless our king is in check, then extend the search by one ply.
 
         if depth == 0 && self.is_in_check(self.color_to_move)? {
-            return self._find_next_move(1, path, alpha_arg, beta_arg);
+            return self._find_next_move(1, pv, history, alpha_arg, beta_arg);
         } else if depth == 0 {
-            return Ok((None, evaluate_position(self, &path)?, path.clone(), 1));
+            return Ok((None, evaluate_position(self, history)?, 1));
         }
 
         let mut best_move: Option<Move> = None;
@@ -1314,17 +1356,32 @@ impl Board {
             WHITE => Score::MIN,
             BLACK => Score::MAX,
         };
-        let mut best_path = path.clone();
-
         let mut node_count: u64 = 1; // number of nodes visited by all
 
-        for mv in self.candidate_moves(self.color_to_move, path) {
+        // Remember current location in history
+        let history_len = history.len();
+
+        // Will hold the PV for each child move
+        let mut child_pv: PV = Vec::new();
+
+        for mv in self.candidate_moves(self.color_to_move, history) {
             let moved_board = self.make_move(mv)?;
-            let moved_path = path.append(mv, self.color_to_move);
+
+            // Add this node to the history, truncating to ensure sibling nodes
+            // from previous iterations are removed.
+            history.truncate(history_len);
+            history.push((mv, self.color_to_move));
+
+            // Clear any sibling PV
+            child_pv.clear();
 
             debug!(
                 "{}: Evaluating move {} initial score={} α={} β={}",
-                self.color_to_move, moved_path, best_score, alpha, beta
+                self.color_to_move,
+                HistoryDisplay(history),
+                best_score,
+                alpha,
+                beta
             );
 
             // Cannot move into check. This helps verify that the position
@@ -1335,15 +1392,17 @@ impl Board {
             // moves to only return legal moves?
             if moved_board.is_in_check(self.color_to_move)? {
                 debug!(
-                    "{}: Continue. In check after move {}{}",
-                    self.color_to_move, moved_path, mv
+                    "{}: Continue. In check after move {}",
+                    self.color_to_move,
+                    HistoryDisplay(history)
                 );
+
                 continue;
             }
 
             // Evaluate board score at leaf nodes
-            let (_, score, mainline, subtree_node_count) =
-                moved_board._find_next_move(depth - 1, &moved_path, alpha, beta)?;
+            let (_, score, subtree_node_count) =
+                moved_board._find_next_move(depth - 1, &mut child_pv, history, alpha, beta)?;
 
             node_count += subtree_node_count;
 
@@ -1355,34 +1414,45 @@ impl Board {
                 WHITE => {
                     alpha = cmp::max(alpha, score);
                     if score > best_score
-                        // shortest line is best, this picks the quickest forced mate sequence
-                        || (score == best_score && mainline.len() < best_path.len())
+                    // shortest line is best, this picks the quickest forced mate sequence
+                       || (score == best_score && child_pv.len() + 1 < pv.len())
                     {
                         best_score = score;
                         best_move = Some(mv);
-                        best_path = mainline.clone();
+
+                        // Write new PV into parent's PV list
+                        pv.clear();
+                        pv.push(mv);
+                        pv.extend(child_pv.iter());
                     }
                 }
                 BLACK => {
                     beta = cmp::min(beta, score);
-                    if score < best_score
-                        || (score == best_score && mainline.len() < best_path.len())
+                    if score < best_score || (score == best_score && child_pv.len() + 1 < pv.len())
                     {
                         best_score = score;
                         best_move = Some(mv);
-                        best_path = mainline.clone();
+
+                        pv.clear();
+                        pv.push(mv);
+                        pv.extend(child_pv.iter());
                     }
                 }
             }
 
             debug!(
                 "{}: Evaluated move {} score={} α={} β={} nodes={}",
-                self.color_to_move, moved_path, score, alpha, beta, subtree_node_count
+                self.color_to_move,
+                HistoryDisplay(history),
+                score,
+                alpha,
+                beta,
+                subtree_node_count
             );
 
             if alpha >= beta {
                 debug!("Found α={} >= β={}. Pruning rest of node.", alpha, beta);
-                return Ok((Some(mv), score, mainline, node_count));
+                return Ok((Some(mv), score, node_count));
             }
         }
 
@@ -1391,16 +1461,16 @@ impl Board {
             if self.is_in_check(self.color_to_move)? {
                 debug!("Position is checkmate for {}", self.color_to_move);
                 return match self.color_to_move {
-                    WHITE => Ok((None, Score::checkmate_white(), path.clone(), 1)),
-                    BLACK => Ok((None, Score::checkmate_black(), path.clone(), 1)),
+                    WHITE => Ok((None, Score::checkmate_white(), 1)),
+                    BLACK => Ok((None, Score::checkmate_black(), 1)),
                 };
             } else {
                 debug!("Position is stalemate");
-                return Ok((None, Score::ZERO, path.clone(), 1));
+                return Ok((None, Score::ZERO, 1));
             }
         }
 
-        Ok((best_move, best_score, best_path, node_count))
+        Ok((best_move, best_score, node_count))
     }
 
     // Open files are files containing no pawns
@@ -1932,8 +2002,10 @@ fn test_should_castle() {
 
     let (_, _, path, _) = board.find_best_move(6).unwrap();
 
-    assert!(path.fold_left(false, |did_castle, mv, color| did_castle
-        || (*mv == Move::CastleKingside && *color == WHITE)));
+    assert!(path
+        .iter()
+        .find(|(mv, color)| (*mv == Move::CastleKingside && *color == WHITE))
+        .is_some());
 }
 
 #[test]
@@ -2086,7 +2158,7 @@ fn test_checkmate_opponent_twin_rooks() {
 }
 
 #[test]
-fn test_checkmate_opponent_king_and_rook() {
+fn test_checkmate_opponent_king_and_rook_foo() {
     init();
     let board = Board::empty()
         .with_color_to_move(WHITE)
@@ -2111,6 +2183,8 @@ fn test_checkmate_opponent_king_and_rook_2_moves() {
         .place_piece(Piece(ROOK, WHITE), B7)
         .place_piece(Piece(KING, BLACK), H8)
         .place_piece(Piece(ROOK, BLACK), F8);
+
+    println!("{}", board1);
 
     let (mv, _) = board1.find_next_move(3).unwrap().unwrap();
     assert_eq!(mv, Move::new(B7, H7));

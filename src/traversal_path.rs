@@ -4,6 +4,10 @@ use std::rc::Rc;
 use crate::color::Color;
 use crate::mv::Move;
 
+// pub struct History(Vec<(Move, Color)>);
+
+// pub struct PrincipalVariation(Vec<(Move, Color)>);
+
 // Linked list containing the current path to the root in the minimax tree
 // traversal
 
