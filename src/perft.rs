@@ -27,7 +27,7 @@ pub fn perft(board: Board, depth: usize) -> Result<usize> {
 
     let mut count = 0;
 
-    for mv in board.all_moves(board.color_to_move)? {
+    for mv in board.all_moves() {
         let moved_board = board.make_move(mv)?;
 
         // Drop illegal moves
@@ -47,7 +47,7 @@ fn perft_debug(board: Board, depth: usize) -> Result<HashMap<Move, usize>> {
 
     let mut moves: HashMap<Move, usize> = HashMap::new();
 
-    for mv in board.all_moves(board.color_to_move)? {
+    for mv in board.all_moves() {
         let moved_board = board.make_move(mv)?;
 
         // Drop illegal moves

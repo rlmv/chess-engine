@@ -880,7 +880,7 @@ impl Board {
 
     // Return all candidate moves for single pieces, allowing illegal moves
     // (e.g., that move the king into check)
-    fn candidate_moves(&self, color: Color, history: &History) -> impl Iterator<Item = Move> + '_ {
+    fn candidate_moves(&self, history: &History) -> impl Iterator<Item = Move> + '_ {
         return move_generator(self, history.last().map(|(mv, _)| *mv));
     }
 
@@ -899,7 +899,11 @@ impl Board {
             .piece_on_square(from)
             .ok_or(NoPieceOnFromSquare(from))?;
 
-        for mv in self.candidate_moves(color, &mut Vec::new()) {
+        if color != self.color_to_move {
+            return Err(BoardError::IllegalMove(format!("Not {}'s turn", color)));
+        }
+
+        for mv in self.candidate_moves(&mut Vec::new()) {
             match mv {
                 Move::Promote {
                     from: source,
@@ -924,8 +928,8 @@ impl Board {
     }
 
     // Return all moves possible for the given color, including castling and promotion
-    pub fn all_moves(&self, color: Color) -> Result<impl Iterator<Item = Move> + '_> {
-        Ok(self.candidate_moves(color, &mut Vec::new()))
+    pub fn all_moves(&self) -> impl Iterator<Item = Move> + '_ {
+        self.candidate_moves(&mut Vec::new())
     }
 
     pub fn plus_vector(s: &Square, v: &MoveVector) -> Option<Square> {
@@ -1368,7 +1372,7 @@ impl Board {
         // Will hold the PV for each child move
         let mut child_pv: PV = Vec::new();
 
-        for mv in self.candidate_moves(self.color_to_move, history) {
+        for mv in self.candidate_moves(history) {
             let moved_board = self.make_move(mv)?;
 
             // Add this node to the history, truncating to ensure sibling nodes
@@ -1492,14 +1496,16 @@ impl Board {
         open
     }
 
-    pub fn checkmate(&self, color: Color) -> Result<bool> {
+    pub fn checkmate(&self) -> Result<bool> {
+        let color = self.color_to_move;
+
         if !self.is_in_check(color)? {
             return Ok(false);
         }
 
         debug!("{}: In check. Evaluating for checkmate", color);
 
-        for mv in self.all_moves(color)? {
+        for mv in self.all_moves() {
             let moved_board = self.make_move(mv)?;
 
             // At least one way out!
@@ -1695,8 +1701,7 @@ fn test_castle_kingside_white() {
             .unwrap();
 
     assert!(board
-        .all_moves(Color::WHITE)
-        .unwrap()
+        .all_moves()
         .collect::<Vec<Move>>()
         .contains(&Move::CastleKingside));
 
@@ -1718,8 +1723,7 @@ fn test_castle_kingside_white_not_allowed_if_king_has_moved() {
             .unwrap();
 
     assert!(!board
-        .all_moves(Color::WHITE)
-        .unwrap()
+        .all_moves()
         .collect::<Vec<Move>>()
         .contains(&Move::CastleKingside));
 }
@@ -1734,8 +1738,7 @@ fn test_castle_kingside_white_not_allowed_if_e1_under_attack() {
             .unwrap();
 
     assert!(!board
-        .all_moves(Color::WHITE)
-        .unwrap()
+        .all_moves()
         .collect::<Vec<Move>>()
         .contains(&Move::CastleKingside));
 }
@@ -1750,8 +1753,7 @@ fn test_castle_kingside_white_not_allowed_if_f1_under_attack() {
             .unwrap();
 
     assert!(!board
-        .all_moves(Color::WHITE)
-        .unwrap()
+        .all_moves()
         .collect::<Vec<Move>>()
         .contains(&Move::CastleKingside));
 }
@@ -1766,8 +1768,7 @@ fn test_castle_kingside_white_not_allowed_if_g1_under_attack() {
             .unwrap();
 
     assert!(!board
-        .all_moves(Color::WHITE)
-        .unwrap()
+        .all_moves()
         .collect::<Vec<Move>>()
         .contains(&Move::CastleKingside));
 }
@@ -1781,8 +1782,7 @@ fn test_castle_queenside_white() {
             .unwrap();
 
     assert!(board
-        .all_moves(Color::WHITE)
-        .unwrap()
+        .all_moves()
         .collect::<Vec<Move>>()
         .contains(&Move::CastleQueenside));
 
@@ -1804,8 +1804,7 @@ fn test_castle_queenside_white_not_allowed_if_king_has_moved() {
             .unwrap();
 
     assert!(!board
-        .all_moves(Color::WHITE)
-        .unwrap()
+        .all_moves()
         .collect::<Vec<Move>>()
         .contains(&Move::CastleQueenside));
 }
@@ -1819,8 +1818,7 @@ fn test_castle_kingside_black() {
             .unwrap();
 
     assert!(board
-        .all_moves(Color::BLACK)
-        .unwrap()
+        .all_moves()
         .collect::<Vec<Move>>()
         .contains(&Move::CastleKingside));
 
@@ -1846,8 +1844,7 @@ fn test_castle_queenside_black() {
             .unwrap();
 
     assert!(board
-        .all_moves(Color::BLACK)
-        .unwrap()
+        .all_moves()
         .collect::<Vec<Move>>()
         .contains(&Move::CastleQueenside));
 
@@ -2127,7 +2124,7 @@ fn test_checkmate() {
         .place_piece(Piece(ROOK, WHITE), B2)
         .place_piece(Piece(KING, BLACK), A6);
 
-    assert!(board.checkmate(BLACK).unwrap());
+    assert!(board.checkmate().unwrap());
 }
 
 #[test]
@@ -2141,7 +2138,7 @@ fn test_can_escape_checkmate() {
         .place_piece(Piece(ROOK, BLACK), H5);
 
     // Rook can intervene on A5
-    assert!(!board.checkmate(BLACK).unwrap());
+    assert!(!board.checkmate().unwrap());
 }
 
 #[test]
@@ -2202,7 +2199,7 @@ fn test_checkmate_opponent_king_and_rook_2_moves() {
     assert_eq!(mv3, Move::new(A7, G7));
 
     let board4 = board3.make_move(mv3).unwrap();
-    assert!(board4.checkmate(BLACK).unwrap());
+    assert!(board4.checkmate().unwrap());
 
     println!("{}", board1);
     println!("{}", board2);
@@ -2233,7 +2230,7 @@ fn test_checkmate_opponent_king_and_rook_2_moves_black_to_move() {
     assert_eq!(mv3, Move::new(A7, G7));
 
     let board4 = board3.make_move(mv3).unwrap();
-    assert!(board4.checkmate(WHITE).unwrap());
+    assert!(board4.checkmate().unwrap());
 
     println!("{}", board1);
     println!("{}", board2);
@@ -2320,7 +2317,7 @@ impl Puzzle {
     }
 
     fn should_be_checkmate(&self) {
-        assert!(self.board.checkmate(self.board.color_to_move).unwrap());
+        assert!(self.board.checkmate().unwrap());
     }
 }
 
@@ -2836,8 +2833,7 @@ fn test_castle_bug() {
 
     assert!(!moved_board.can_castle_kingside(BLACK));
     assert!(moved_board
-        .all_moves(moved_board.color_to_move)
-        .unwrap()
+        .all_moves()
         .find(|mv| *mv == Move::CastleKingside)
         .is_none());
 }
