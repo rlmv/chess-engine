@@ -840,35 +840,42 @@ impl Board {
         // Observation: queen attacks can be computed at the same time as rook
         // and bishop attacks, just need to AND with the queen bitboard as well.
 
-        let attackers = self.presence_for(color);
+        GenIter(move || {
+            let attackers = self.presence_for(color);
+            let to = target_square;
 
-        (self._bishop_attacks(target_square, &Piece(BISHOP, color.opposite()))
-            & (attackers.bishop | attackers.queen))
-            .squares()
-            .chain(
-                (self._rook_attacks(target_square, &Piece(ROOK, color.opposite()))
-                    & (attackers.rook | attackers.queen))
-                    .squares(),
-            )
-            .chain(
-                (self._knight_attacks(target_square, &Piece(KNIGHT, color.opposite()))
-                    & attackers.knight)
-                    .squares(),
-            )
-            .chain(
-                (self._king_attacks(target_square, &Piece(KING, color.opposite()))
-                    & attackers.king)
-                    .squares(),
-            )
-            .chain(
-                (self._pawn_attacks(target_square, &Piece(PAWN, color.opposite()))
-                    & attackers.pawn)
-                    .squares(),
-            )
-            .map(move |from| Move::Single {
-                from,
-                to: target_square,
-            })
+            let bishop_attacks = self
+                ._bishop_attacks(target_square, &Piece(BISHOP, color.opposite()))
+                & (attackers.bishop | attackers.queen);
+            for from in bishop_attacks.squares() {
+                yield Move::Single { from, to }
+            }
+
+            let rook_attacks = self._rook_attacks(target_square, &Piece(ROOK, color.opposite()))
+                & (attackers.rook | attackers.queen);
+            for from in rook_attacks.squares() {
+                yield Move::Single { from, to }
+            }
+
+            let knight_attacks = self
+                ._knight_attacks(target_square, &Piece(KNIGHT, color.opposite()))
+                & attackers.knight;
+            for from in knight_attacks.squares() {
+                yield Move::Single { from, to }
+            }
+
+            let king_attacks =
+                self._king_attacks(target_square, &Piece(KING, color.opposite())) & attackers.king;
+            for from in king_attacks.squares() {
+                yield Move::Single { from, to }
+            }
+
+            let pawn_attacks =
+                self._pawn_attacks(target_square, &Piece(PAWN, color.opposite())) & attackers.pawn;
+            for from in pawn_attacks.squares() {
+                yield Move::Single { from, to }
+            }
+        })
     }
 
     // Return all candidate moves for single pieces, allowing illegal moves
