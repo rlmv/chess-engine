@@ -1,3 +1,4 @@
+#![feature(generators, generator_trait)]
 #[macro_use]
 pub mod bitboard;
 pub mod board;

@@ -9,7 +9,7 @@ release:
 	CARGO_PROFILE_RELEASE_DEBUG=true cargo build --release
 
 profile: release
-	sudo LOG_LEVEL=INFO LOG_STDOUT=TRUE /home/bo/.cargo/bin/flamegraph --output=${OUTPUT} ${BINARY}  fen ${POSITION_2} 8
+	sudo LOG_LEVEL=INFO LOG_STDOUT=TRUE /home/bo/.cargo/bin/flamegraph --output=${OUTPUT} ${BINARY}  fen ${POSITION_2} 9
 	firefox --new-tab file:///${PWD}/${OUTPUT}
 
 # Great tutorial: http://sandsoftwaresound.net/perf/perf-tutorial-hot-spots/

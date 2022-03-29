@@ -235,7 +235,7 @@ perft_test!(fen = POSITION_1, depth = 4);
 perft_test!(fen = POSITION_2, depth = 1);
 perft_test!(fen = POSITION_2, depth = 2);
 perft_test!(fen = POSITION_2, depth = 3);
-// perft_test!(fen = POSITION_2, depth = 4);
+perft_test!(fen = POSITION_2, depth = 4);
 
 perft_test!(fen = POSITION_3, depth = 1);
 perft_test!(fen = POSITION_3, depth = 2);

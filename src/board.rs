@@ -14,9 +14,170 @@ use log::{debug, info};
 use std::cmp;
 use std::fmt;
 
+use std::ops::{Generator, GeneratorState};
+use std::pin::Pin;
+
 pub type Result<T> = std::result::Result<T, BoardError>;
 
 pub use PieceEnum::*;
+
+pub fn move_generator(board: &Board, last_move: Option<Move>) -> impl Iterator<Item = Move> + '_ {
+    GenIter(move || {
+        let color = board.color_to_move;
+
+        // recaptures
+
+        let last_destination = last_move.and_then(|mv| match mv {
+            Move::Single { to, .. } | Move::Promote { to, .. } => Some(to),
+            _ => None,
+        });
+
+        if let Some(last_destination) = last_destination {
+            for recapturing_mv in
+                board.attacking_moves_by_color(last_destination, board.color_to_move)
+            {
+                yield recapturing_mv
+            }
+        }
+
+        for mv in board.all_pawn_captures(color) {
+            yield mv
+        }
+
+        fn unpack_attacking_moves(
+            from: Square,
+            attacks: Bitboard,
+            defenders: Bitboard,
+        ) -> impl Iterator<Item = Move> {
+            (attacks & defenders)
+                .squares()
+                .map(move |to| Move::Single { from, to })
+        }
+
+        let mut defenders = board.presence_for(color.opposite()).all;
+        // unset the last defender bit, we already yielded those moves as part of recapturing above
+        if let Some(last_destination) = last_destination {
+            defenders ^= bitboard![last_destination];
+        }
+
+        for (from, attacks) in board.all_bishop_attacks(color) {
+            for mv in unpack_attacking_moves(from, attacks, defenders) {
+                yield mv
+            }
+        }
+
+        for (from, attacks) in board.all_rook_attacks(color) {
+            for mv in unpack_attacking_moves(from, attacks, defenders) {
+                yield mv
+            }
+        }
+
+        for (from, attacks) in board.all_knight_attacks(color) {
+            for mv in unpack_attacking_moves(from, attacks, defenders) {
+                yield mv
+            }
+        }
+
+        for (from, attacks) in board.all_queen_attacks(color) {
+            for mv in unpack_attacking_moves(from, attacks, defenders) {
+                yield mv
+            }
+        }
+
+        for (from, attacks) in board.all_king_attacks(color) {
+            for mv in unpack_attacking_moves(from, attacks, defenders) {
+                yield mv
+            }
+        }
+
+        for mv in board.en_passant_captures(color) {
+            yield mv
+        }
+
+        // castling
+
+        if board.can_castle_kingside(color) {
+            yield Move::CastleKingside;
+        }
+
+        if board.can_castle_queenside(color) {
+            yield Move::CastleQueenside;
+        }
+
+        // quiet moves
+
+        fn unpack_quiet_moves(
+            from: Square,
+            attacks: Bitboard,
+            defenders: Bitboard,
+        ) -> impl Iterator<Item = Move> {
+            (attacks & !defenders)
+                .squares()
+                .map(move |to| Move::Single { from, to })
+        }
+
+        let defenders = board.presence_for(color.opposite()).all;
+
+        for (from, attacks) in board.all_bishop_attacks(color) {
+            for mv in unpack_quiet_moves(from, attacks, defenders) {
+                yield mv
+            }
+        }
+
+        for (from, attacks) in board.all_rook_attacks(color) {
+            for mv in unpack_quiet_moves(from, attacks, defenders) {
+                yield mv
+            }
+        }
+
+        for (from, attacks) in board.all_knight_attacks(color) {
+            for mv in unpack_quiet_moves(from, attacks, defenders) {
+                yield mv
+            }
+        }
+
+        for (from, attacks) in board.all_queen_attacks(color) {
+            for mv in unpack_quiet_moves(from, attacks, defenders) {
+                yield mv
+            }
+        }
+
+        for (from, attacks) in board.all_king_attacks(color) {
+            for mv in unpack_quiet_moves(from, attacks, defenders) {
+                yield mv
+            }
+        }
+
+        for mv in board.all_pawn_advances(color) {
+            yield mv
+        }
+    })
+}
+
+/*
+ * Convert a generator into an iterator.
+ *
+ * Borrowed from the `gen_iter` crate: https://docs.rs/gen-iter/latest/gen_iter/
+ */
+#[derive(Copy, Clone, Debug)]
+pub struct GenIter<T>(pub T)
+where
+    T: Generator<Return = ()> + Unpin;
+
+impl<T> Iterator for GenIter<T>
+where
+    T: Generator<Return = ()> + Unpin,
+{
+    type Item = T::Yield;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        match Pin::new(&mut self.0).resume(()) {
+            GeneratorState::Yielded(n) => Some(n),
+            GeneratorState::Complete(()) => None,
+        }
+    }
+}
 
 /*
  * TODO:
@@ -161,6 +322,12 @@ fn compute_attacks(
     let blocker = unchecked_bitscan(intersections | bitboard![backstop]);
 
     !same_color & rays[from.index()] & !rays[blocker.index()]
+}
+
+// pinned pieces are all the defenders which stand between an attacking slider and the defenders king
+
+fn pinned_pieces(attackers: Presence, defenders: Presence) -> Bitboard {
+    Bitboard::empty()
 }
 
 #[derive(Clone, Eq, PartialEq, Debug, Hash)]
@@ -680,81 +847,14 @@ impl Board {
         color: Color,
         history: &TraversalPath,
     ) -> impl Iterator<Item = Move> + '_ {
-        // TODO: check color, turn
-
-        // TODO: refactor this to remove the unnecessary filtering
-
-        let last_move = history.peek();
-        let last_destination = last_move.and_then(|(mv, _)| match mv {
-            Move::Single { to, .. } | Move::Promote { to, .. } => Some(to),
-            _ => None,
-        });
-
-        let re_capturing_moves = last_destination
-            .into_iter()
-            .flat_map(move |last_destination| {
-                self.attacking_moves_by_color(last_destination, color)
-            });
-
-        let capturing_moves = self
-            .all_pawn_captures(color)
-            .chain(
-                self.all_knight_attacks(color)
-                    .chain(self.all_bishop_attacks(color))
-                    .chain(self.all_rook_attacks(color))
-                    .chain(self.all_queen_attacks(color))
-                    .chain(self.all_king_attacks(color))
-                    .map(move |(from, attacks)| {
-                        (from, attacks & self.presence_for(color.opposite()).all)
-                    })
-                    .flat_map(|(from, captures)| {
-                        captures.squares().map(move |to| Move::Single { from, to })
-                    }),
-            )
-            .filter(move |mv| match mv {
-                Move::Single { to, .. } | Move::Promote { to, .. }
-                    if Some(*to) == last_destination =>
-                {
-                    false
-                }
-                _ => true,
-            })
-            .chain(self.en_passant_captures(color));
-
-        let non_capturing_moves = self
-            .all_bishop_attacks(color)
-            .chain(self.all_rook_attacks(color))
-            .chain(self.all_knight_attacks(color))
-            .chain(self.all_queen_attacks(color))
-            .chain(self.all_king_attacks(color))
-            .map(move |(from, attacks)| (from, attacks & !self.presence_for(color.opposite()).all))
-            .flat_map(|(from, quiet_moves)| {
-                quiet_moves
-                    .squares()
-                    .map(move |to| Move::Single { from, to })
-            })
-            .chain(self.all_pawn_advances(color));
-
-        re_capturing_moves
-            .chain(capturing_moves)
-            .chain(if self.can_castle_kingside(color) {
-                vec![Move::CastleKingside].into_iter()
-            } else {
-                Vec::new().into_iter()
-            })
-            .chain(if self.can_castle_queenside(color) {
-                vec![Move::CastleQueenside].into_iter()
-            } else {
-                Vec::new().into_iter()
-            })
-            .chain(non_capturing_moves)
+        return move_generator(self, history.peek().map(|(mv, _)| mv));
     }
 
-    // Return all legal moves for the given square, filtering out those that result in
-    // illegal states
-    //
-    // NOTE: do not use this. Inefficient, better to compare against the already
-    // moved board in find_next_move.
+    // // Return all legal moves for the given square, filtering out those that result in
+    // // illegal states
+    // //
+    // // NOTE: do not use this. Inefficient, better to compare against the already
+    // // moved board in find_next_move.
     #[cfg(test)]
     fn legal_moves(&self, from: Square) -> Result<Vec<Move>> {
         // TODO assert that piece on square is color to move
