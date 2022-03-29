@@ -42,7 +42,7 @@ pub fn perft(board: Board, depth: usize) -> Result<usize> {
 }
 
 #[allow(dead_code)]
-fn perft_debug(board: Board, depth: usize) -> Result<HashMap<Move, usize>> {
+fn perft_root(board: Board, depth: usize) -> Result<HashMap<Move, usize>> {
     assert!(depth >= 1);
 
     let mut moves: HashMap<Move, usize> = HashMap::new();
@@ -134,7 +134,7 @@ fn compare_to_stockfish(fen: &str, setup_moves: Vec<Move>, depth: usize) -> () {
     }
     let color = board.color_to_move;
 
-    let our_moves: HashMap<String, usize> = perft_debug(board, depth)
+    let our_moves: HashMap<String, usize> = perft_root(board, depth)
         .unwrap()
         .into_iter()
         .map(|(k, v)| (format_move(k, color), v))

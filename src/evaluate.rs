@@ -7,11 +7,13 @@ use crate::mv::*;
 use crate::square::*;
 use crate::traversal_path::*;
 use core::cmp::Ordering;
+use std::cmp;
 use std::fmt;
 
 const CASTLE_BONUS: i32 = 30;
 const OFF_INITIAL_SQUARE_BONUS: i32 = 15;
 const OPEN_FILE_BONUS: i32 = 21;
+const CONNECTED_ROOK_BONUS: i32 = 21;
 
 const INNER_KNIGHT_BONUS: i32 = 20;
 const MIDDLE_KNIGHT_BONUS: i32 = OFF_INITIAL_SQUARE_BONUS;
@@ -85,6 +87,10 @@ pub fn evaluate_position(board: &Board, history: &Vec<(Move, Color)>) -> Result<
     white_bonus += active_knight_bonus(board.presence_white.knight);
     black_bonus -= active_knight_bonus(board.presence_black.knight);
 
+    let all = board.presence_white.all | board.presence_black.all;
+    white_bonus += connected_rook_bonus(board.presence_white.rook, all);
+    black_bonus -= connected_rook_bonus(board.presence_black.rook, all);
+
     Ok(Score(
         white_value - black_value + white_bonus - black_bonus + castle_bonus,
     ))
@@ -121,6 +127,48 @@ fn active_knight_bonus(knights: Bitboard) -> i32 {
     (outer & knights).popcnt() as i32 * OUTER_KNIGHT_BONUS
         + (middle & knights).popcnt() as i32 * MIDDLE_KNIGHT_BONUS
         + (inner & knights).popcnt() as i32 * INNER_KNIGHT_BONUS
+}
+
+// TODO: handle case with more than two rooks
+fn connected_rook_bonus(rooks: Bitboard, all: Bitboard) -> i32 {
+    // Iteration is guaranteed to happen in square index order,
+    // so rook1.index() < rook2.index().
+    let mut squares = rooks.squares();
+
+    let rook1 = if let Some(rook1) = squares.next() {
+        rook1
+    } else {
+        return 0;
+    };
+
+    let rook2 = if let Some(rook2) = squares.next() {
+        rook2
+    } else {
+        return 0;
+    };
+
+    if rook1.rank() == rook2.rank() {
+        // Compute mask for intermediate squares ibetween the rooks
+        let between = ((bitboard![rook1] - 1) | bitboard![rook1]) ^ (bitboard![rook2] - 1);
+
+        // Nothing between? Then they are connected
+        if (between & all).is_empty() {
+            return CONNECTED_ROOK_BONUS;
+        } else {
+            return 0;
+        }
+    } else if rook1.file() == rook2.file() {
+        let between = (((bitboard![rook1] - 1) | bitboard![rook1]) ^ (bitboard![rook2] - 1))
+            & bitboard_for_file(rook1.file());
+
+        if (between & all).is_empty() {
+            return CONNECTED_ROOK_BONUS;
+        } else {
+            return 0;
+        }
+    } else {
+        return 0;
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -183,5 +231,49 @@ fn test_active_knights() {
     assert_eq!(
         active_knight_bonus(board.presence_black.knight),
         MIDDLE_KNIGHT_BONUS + OUTER_KNIGHT_BONUS
+    );
+}
+
+#[test]
+fn test_connected_rooks() {
+    let board =
+        fen::parse("k6r/ppp1pp1p/2nr1npB/3pPb2/1q1P4/N1P2NPP/PP2QPB1/R4RK1 b Qk - 0 1").unwrap();
+
+    assert_eq!(
+        connected_rook_bonus(
+            board.presence_white.rook,
+            board.presence_black.all | board.presence_white.all
+        ),
+        CONNECTED_ROOK_BONUS
+    );
+
+    assert_eq!(
+        connected_rook_bonus(
+            board.presence_black.rook,
+            board.presence_black.all | board.presence_white.all
+        ),
+        0
+    );
+
+    let moved_board = board.make_move(Move::Single { from: H8, to: D8 }).unwrap();
+
+    assert_eq!(
+        connected_rook_bonus(
+            moved_board.presence_black.rook,
+            moved_board.presence_black.all | moved_board.presence_white.all
+        ),
+        CONNECTED_ROOK_BONUS
+    );
+
+    let board_with_knight_between =
+        fen::parse("k6r/ppp1pp1p/2nr1npB/3pPb2/1q1P4/2P2NPP/PP2QPB1/RN3RK1 w Qk - 0 1").unwrap();
+
+    assert_eq!(
+        connected_rook_bonus(
+            board_with_knight_between.presence_white.rook,
+            board_with_knight_between.presence_black.all
+                | board_with_knight_between.presence_white.all
+        ),
+        0
     );
 }

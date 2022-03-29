@@ -1400,7 +1400,7 @@ impl Board {
             // moves to only return legal moves?
             if moved_board.is_in_check(self.color_to_move)? {
                 debug!(
-                    "{}: Continue. In check after move {}",
+                    "{}: Continue. In check after illegal move {}",
                     self.color_to_move,
                     HistoryDisplay(history)
                 );

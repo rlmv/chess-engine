@@ -5,7 +5,9 @@ use crate::rank::*;
 use crate::square::*;
 use crate::vector::*;
 use std::fmt;
-use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not, Shl, Shr};
+use std::ops::{
+    BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not, Shl, Shr, Sub,
+};
 
 use lazy_static::lazy_static;
 
@@ -135,6 +137,10 @@ pub const H_FILE: Bitboard = Bitboard(0x8080808080808080);
 pub const ALL_FILES: [Bitboard; 8] = [
     A_FILE, B_FILE, C_FILE, D_FILE, E_FILE, F_FILE, G_FILE, H_FILE,
 ];
+
+pub fn bitboard_for_file(file: File) -> Bitboard {
+    ALL_FILES[file.index() as usize]
+}
 
 pub const RANK_1: Bitboard = Bitboard(0x00000000000000ff);
 pub const RANK_2: Bitboard = Bitboard(0x000000000000ff00);
@@ -327,6 +333,14 @@ impl BitXorAssign for Bitboard {
     }
 }
 
+impl Sub<u64> for Bitboard {
+    type Output = Self;
+
+    fn sub(self, rhs: u64) -> Self::Output {
+        Self(self.0 - rhs)
+    }
+}
+
 impl Shl<usize> for Bitboard {
     type Output = Self;
 
@@ -428,4 +442,11 @@ fn test_lowest_set_bit() {
     assert_eq!(bitboard![H8, C8, A1].lowest_set_bit(), bitboard![A1]);
     assert_eq!(bitboard![A1].lowest_set_bit(), bitboard![A1]);
     assert_eq!(bitboard![].lowest_set_bit(), bitboard![]);
+}
+
+#[test]
+fn test_bitboard_for_file() {
+    assert_eq!(bitboard_for_file(File::A), A_FILE);
+    assert_eq!(bitboard_for_file(File::C), C_FILE);
+    assert_eq!(bitboard_for_file(File::H), H_FILE);
 }
