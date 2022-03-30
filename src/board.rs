@@ -2241,16 +2241,16 @@ fn test_checkmate_opponent_king_and_rook_2_moves_black_to_move() {
 #[test]
 fn test_avoid_stalemate() {
     init();
-    let board = crate::fen::parse("6k1/6p1/4K1P1/7r/8/3q4/8/8 b - - 3 62").unwrap();
+    let board = crate::fen::parse("6k1/6p1/4K1P1/2p4r/2P3P1/2Pq4/8/8 b - - 3 62").unwrap();
 
     let (mv, _) = board.find_next_move(4).unwrap().unwrap();
     // Would be stalemate:
     assert_ne!(mv, Move::Single { from: D3, to: D8 });
 
     Puzzle::new(board)
-        .should_find_move(H5, A5)
+        .should_find_move(H5, G5)
         .respond_with(E6, E7)
-        .should_find_move(A5, E5)
+        .should_find_move(G5, E5)
         .should_be_checkmate();
 }
 
