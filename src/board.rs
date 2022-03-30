@@ -11,11 +11,12 @@ use crate::square::*;
 use crate::traversal_path::TraversalPath;
 use crate::vector::*;
 use log::{debug, info};
+use rayon::prelude::*;
 use std::cmp;
 use std::fmt;
-
 use std::ops::{Generator, GeneratorState};
 use std::pin::Pin;
+use std::sync::{Arc, Mutex};
 
 pub type Result<T> = std::result::Result<T, BoardError>;
 
@@ -1318,7 +1319,7 @@ impl Board {
         let mut history: History = Vec::new();
 
         let (mv, score, node_count) =
-            self._find_next_move(depth, &mut pv, &mut history, Score::MIN, Score::MAX)?;
+            self._find_next_move_parallel(depth, &mut pv, &mut history, Score::MIN, Score::MAX)?;
 
         let full_pv = full_history(pv, self.color_to_move);
 
@@ -1459,7 +1460,13 @@ impl Board {
             );
 
             if alpha >= beta {
-                debug!("Found α={} >= β={}. Pruning rest of node.", alpha, beta);
+                debug!(
+                    "{}: {} Found α={} >= β={}. Pruning rest of node.",
+                    self.color_to_move,
+                    HistoryDisplay(&history),
+                    alpha,
+                    beta
+                );
                 return Ok((Some(mv), score, node_count));
             }
         }
@@ -1479,6 +1486,181 @@ impl Board {
         }
 
         Ok((best_move, best_score, node_count))
+    }
+
+    fn _find_next_move_parallel(
+        &self,
+        depth: u8,
+        // Principal variation result, used to return the best line found in this node.
+        // Though slightly confusing, it is more efficient to pass a result
+        // buffer here instead of returning a new buffer from this function.
+        pv: &mut PV,
+        // List of all moves made up to this point in the search tree (all ancestors)
+        history: &mut History,
+        alpha: Score,
+        beta: Score,
+    ) -> Result<(Option<Move>, Score, u64)> {
+        if depth == 0 && self.is_in_check(self.color_to_move)? {
+            return self._find_next_move(1, pv, history, alpha, beta);
+        } else if depth == 0 {
+            return Ok((None, evaluate_position(self, history)?, 1));
+        }
+
+        #[derive(Debug)]
+        struct State {
+            best_move: Option<Move>,
+            best_score: Score,
+            pv: PV,
+            node_count: u64, // todo - atomic?
+            alpha: Score,
+            beta: Score,
+        };
+
+        let state_mutex = Mutex::new(State {
+            best_move: None,
+            best_score: match self.color_to_move {
+                WHITE => Score::MIN,
+                BLACK => Score::MAX,
+            },
+            pv: Vec::new(),
+            node_count: 1,
+            alpha: alpha,
+            beta: beta,
+        });
+
+        self.candidate_moves(history)
+            .collect::<Vec<Move>>()
+            .into_par_iter()
+            .try_for_each(|mv| {
+                let moved_board = self.make_move(mv)?;
+
+                // Will hold the PV for each child move
+                let mut child_pv: PV = Vec::new();
+                let mut history: History = history.clone();
+                history.push((mv, self.color_to_move));
+
+                let state = state_mutex
+                    .lock()
+                    .map_err(|_| IOError("Could not lock mutex".to_string()))?;
+                //                dbg!("start", mv, &state);
+                let alpha = state.alpha;
+                let beta = state.beta;
+
+                debug!(
+                    "{}: Evaluating move {} initial score={} α={} β={}",
+                    self.color_to_move,
+                    HistoryDisplay(&history),
+                    state.best_score,
+                    alpha,
+                    beta
+                );
+
+                drop(state); // be sure to drop mutex before long computation
+
+                if moved_board.is_in_check(self.color_to_move)? {
+                    debug!(
+                        "{}: Continue. In check after illegal move {}",
+                        self.color_to_move,
+                        HistoryDisplay(&history)
+                    );
+                    return Ok(());
+                }
+
+                let (_, score, subtree_node_count) = //if history.len() < 3 {
+                //     moved_board._find_next_move_parallel(
+                //         depth - 1,
+                //         &mut child_pv,
+                //         &mut history,
+                //         alpha,
+                //         beta,
+                //     )?
+                // } else {
+                    moved_board._find_next_move(
+                        depth - 1,
+                        &mut child_pv,
+                        &mut history,
+                        alpha,
+                        beta,
+                    )?;
+                //                };
+
+                let mut state = state_mutex
+                    .lock()
+                    .map_err(|_| IOError("Could not lock mutex".to_string()))?;
+
+                state.node_count += subtree_node_count;
+
+                match self.color_to_move {
+                    WHITE => {
+                        state.alpha = cmp::max(state.alpha, score);
+                        if score > state.best_score
+                            || (score == state.best_score && child_pv.len() + 1 < state.pv.len())
+                        {
+                            state.best_score = score;
+                            state.best_move = Some(mv);
+
+                            state.pv.clear();
+                            state.pv.push(mv);
+                            state.pv.extend(child_pv.iter());
+                        }
+                    }
+                    BLACK => {
+                        state.beta = cmp::min(state.beta, score);
+                        if score < state.best_score
+                            || (score == state.best_score && child_pv.len() + 1 < state.pv.len())
+                        {
+                            state.best_score = score;
+                            state.best_move = Some(mv);
+
+                            state.pv.clear();
+                            state.pv.push(mv);
+                            state.pv.extend(child_pv.iter());
+                        }
+                    }
+                }
+
+                debug!(
+                    "{}: Evaluated move {} score={} α={} β={} nodes={}",
+                    self.color_to_move,
+                    HistoryDisplay(&history),
+                    score,
+                    state.alpha,
+                    state.beta,
+                    subtree_node_count
+                );
+
+                //                dbg!("end", mv, &state);
+
+                //                println!("end {}", mv);
+
+                Ok(())
+            })?;
+
+        let state = state_mutex
+            .lock()
+            .map_err(|e| IOError("Could not lock mutex".to_string()))?;
+
+        // dbg!("here");
+        // dbg!(&state);
+
+        if state.best_move.is_none() {
+            if self.is_in_check(self.color_to_move)? {
+                debug!("Position is checkmate for {}", self.color_to_move);
+                return match self.color_to_move {
+                    WHITE => Ok((None, Score::checkmate_white(), 1)),
+                    BLACK => Ok((None, Score::checkmate_black(), 1)),
+                };
+            } else {
+                debug!("Position is stalemate");
+                return Ok((None, Score::ZERO, 1));
+            }
+        }
+
+        // TODO: do this unconditionally?
+        pv.clear();
+        pv.extend(state.pv.iter());
+
+        Ok((state.best_move, state.best_score, state.node_count))
     }
 
     // Open files are files containing no pawns
@@ -2218,7 +2400,9 @@ fn test_checkmate_opponent_king_and_rook_2_moves_black_to_move() {
         .place_piece(Piece(KING, WHITE), H8)
         .place_piece(Piece(ROOK, WHITE), F8);
 
-    let (mv, _) = board1.find_next_move(3).unwrap().unwrap();
+    println!("{}", board1);
+
+    let (mv, _) = board1.find_next_move(4).unwrap().unwrap();
     assert_eq!(mv, Move::new(B7, H7));
 
     let board2 = board1.make_move(mv).unwrap();
@@ -2226,7 +2410,7 @@ fn test_checkmate_opponent_king_and_rook_2_moves_black_to_move() {
     // Only move available
     let board3 = board2.make_move((H8, G8).into()).unwrap();
 
-    let (mv3, _) = board3.find_next_move(3).unwrap().unwrap();
+    let (mv3, _) = board3.find_next_move(4).unwrap().unwrap();
     assert_eq!(mv3, Move::new(A7, G7));
 
     let board4 = board3.make_move(mv3).unwrap();
@@ -2248,7 +2432,7 @@ fn test_avoid_stalemate() {
     assert_ne!(mv, Move::Single { from: D3, to: D8 });
 
     Puzzle::new(board)
-        .should_find_move(H5, A5)
+        .should_find_move(H5, G5)
         .respond_with(E6, E7)
         .should_find_move(A5, E5)
         .should_be_checkmate();

@@ -14,6 +14,7 @@ nom = "7.1"
 log-panics = { version = "2.0", features = ["with-backtrace"] }
 lazy_static = "1.4"
 paste = "0.1"
+rayon = "1.5"
 
 [dev-dependencies]
 criterion = { version = "0.3", features = ["html_reports"]}
