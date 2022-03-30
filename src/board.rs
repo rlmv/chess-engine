@@ -28,12 +28,13 @@ pub type PV = Vec<Move>;
  * Convert a principal variation into a full history containing the color of
  * each move.
  */
-fn full_history(pv: PV, start_color: Color) -> History {
+fn full_history(pv: &PV, start_color: Color) -> History {
     pv.into_iter()
         .zip(
             std::iter::repeat([start_color, start_color.opposite()])
                 .flat_map(|array| array.into_iter()),
         )
+        .map(|(mv, color)| (*mv, color))
         .collect()
 }
 
@@ -52,8 +53,18 @@ impl fmt::Display for HistoryDisplay<'_> {
     }
 }
 
-pub fn move_generator(board: &Board, last_move: Option<Move>) -> impl Iterator<Item = Move> + '_ {
+pub fn move_generator(
+    board: &Board,
+    last_move: Option<Move>,
+    hint: Option<Move>,
+) -> impl Iterator<Item = Move> + '_ {
     GenIter(move || {
+        // return
+        match hint {
+            Some(hint) => yield hint,
+            None => (),
+        }
+
         let color = board.color_to_move;
 
         // recaptures
@@ -881,7 +892,7 @@ impl Board {
     // Return all candidate moves for single pieces, allowing illegal moves
     // (e.g., that move the king into check)
     fn candidate_moves(&self, history: &History) -> impl Iterator<Item = Move> + '_ {
-        return move_generator(self, history.last().map(|(mv, _)| *mv));
+        return move_generator(self, history.last().map(|(mv, _)| *mv), None);
     }
 
     // // Return all legal moves for the given square, filtering out those that result in
@@ -1316,20 +1327,38 @@ impl Board {
     ) -> Result<(Option<Move>, Score, Vec<(Move, Color)>, u64)> {
         let mut pv: PV = Vec::new();
         let mut history: History = Vec::new();
-        let curr_depth = 0;
-        let (mv, score, node_count) = self._find_next_move(
-            curr_depth,
-            max_depth,
-            &mut pv,
-            &mut history,
-            Score::MIN,
-            Score::MAX,
-        )?;
 
-        let full_pv = full_history(pv, self.color_to_move);
+        let mut mv: Option<Move> = None;
+        let mut score: Score = Score::ZERO;
+        let mut node_count: u64 = 0;
 
+        for i in 1..=max_depth {
+            let curr_depth = 0;
+            pv.clear();
+            history.clear();
+            (mv, score, node_count) = self._find_next_move(
+                curr_depth,
+                i,
+                &mut pv,
+                &mut history,
+                Score::MIN,
+                Score::MAX,
+                mv,
+            )?;
+            let full_pv = full_history(&pv, self.color_to_move);
+
+            info!(
+                "Iteration {}: Main line score={}, path={}, node_count={}",
+                i,
+                score,
+                HistoryDisplay(&full_pv),
+                node_count
+            );
+        }
+
+        let full_pv = full_history(&pv, self.color_to_move);
         info!(
-            "Main line score={}, path={}, node_count={}",
+            "Final: Main line score={}, path={}, node_count={}",
             score,
             HistoryDisplay(&full_pv),
             node_count
@@ -1350,6 +1379,7 @@ impl Board {
         history: &mut History,
         mut alpha: Score,
         mut beta: Score,
+        hint: Option<Move>,
     ) -> Result<(Option<Move>, Score, u64)> {
         // Find all pieces
         // Generate all valid moves for those pieces.
@@ -1361,7 +1391,7 @@ impl Board {
         // Unless our king is in check, then extend the search by one ply.
 
         if curr_depth == max_depth && self.is_in_check(self.color_to_move)? {
-            return self._find_next_move(curr_depth, max_depth + 1, pv, history, alpha, beta);
+            return self._find_next_move(curr_depth, max_depth + 1, pv, history, alpha, beta, None);
         } else if curr_depth == max_depth {
             return Ok((None, evaluate_position(self, history)?, 1));
         }
@@ -1379,7 +1409,7 @@ impl Board {
         // Will hold the PV for each child move
         let mut child_pv: PV = Vec::new();
 
-        for mv in self.candidate_moves(history) {
+        for mv in move_generator(self, history.last().map(|(mv, _)| *mv), hint) {
             let moved_board = self.make_move(mv)?;
 
             // Add this node to the history, truncating to ensure sibling nodes
@@ -1423,6 +1453,7 @@ impl Board {
                 history,
                 alpha,
                 beta,
+                None,
             )?;
 
             node_count += subtree_node_count;
