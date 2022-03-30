@@ -1543,7 +1543,8 @@ impl Board {
             beta: beta,
         });
 
-        self.candidate_moves(history)
+        let result = self
+            .candidate_moves(history)
             .collect::<Vec<Move>>()
             .into_par_iter()
             .try_for_each(|mv| {
@@ -1580,15 +1581,16 @@ impl Board {
                     return Ok(());
                 }
 
-                let (_, score, subtree_node_count) = //if history.len() < 3 {
-                //     moved_board._find_next_move_parallel(
-                //         depth - 1,
-                //         &mut child_pv,
-                //         &mut history,
-                //         alpha,
-                //         beta,
-                //     )?
-                // } else {
+                let (_, score, subtree_node_count) = if history.len() < 3 {
+                    moved_board._find_next_move_parallel(
+                        curr_depth + 1,
+                        max_depth,
+                        &mut child_pv,
+                        &mut history,
+                        alpha,
+                        beta,
+                    )?
+                } else {
                     moved_board._find_next_move(
                         curr_depth + 1,
                         max_depth,
@@ -1596,8 +1598,8 @@ impl Board {
                         &mut history,
                         alpha,
                         beta,
-                    )?;
-                //                };
+                    )?
+                };
 
                 let mut state = state_mutex
                     .lock()
@@ -1644,8 +1646,26 @@ impl Board {
                     subtree_node_count
                 );
 
+                // TODO: how to shortcircuit?
+                if state.alpha >= state.beta {
+                    debug!(
+                        "{}: {} Found α={} >= β={}. Pruning rest of node.",
+                        self.color_to_move,
+                        HistoryDisplay(&history),
+                        state.alpha,
+                        state.beta
+                    );
+                    return Err(Break);
+                }
+
                 Ok(())
-            })?;
+            });
+
+        match result {
+            Ok(()) => (),
+            Err(Break) => (),
+            Err(e) => return Err(e),
+        }
 
         let state = state_mutex
             .lock()
