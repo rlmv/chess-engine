@@ -1306,20 +1306,27 @@ impl Board {
 
     // TODO: remove. Only kept for testing
     #[cfg(test)]
-    pub fn find_next_move(&self, depth: u8) -> Result<Option<(Move, Score)>> {
-        let (mv, score, _, _) = self.find_best_move(depth)?;
+    pub fn find_next_move(&self, max_depth: u8) -> Result<Option<(Move, Score)>> {
+        let (mv, score, _, _) = self.find_best_move(max_depth)?;
         Ok(mv.map(|m| (m, score)))
     }
 
     pub fn find_best_move(
         &self,
-        depth: u8,
+        max_depth: u8,
     ) -> Result<(Option<Move>, Score, Vec<(Move, Color)>, u64)> {
         let mut pv: PV = Vec::new();
         let mut history: History = Vec::new();
 
-        let (mv, score, node_count) =
-            self._find_next_move_parallel(depth, &mut pv, &mut history, Score::MIN, Score::MAX)?;
+        let curr_depth = 0;
+        let (mv, score, node_count) = self._find_next_move_parallel(
+            curr_depth,
+            max_depth,
+            &mut pv,
+            &mut history,
+            Score::MIN,
+            Score::MAX,
+        )?;
 
         let full_pv = full_history(pv, self.color_to_move);
 
@@ -1335,7 +1342,8 @@ impl Board {
 
     fn _find_next_move(
         &self,
-        depth: u8,
+        curr_depth: u8,
+        max_depth: u8,
         // Principal variation result, used to return the best line found in this node.
         // Though slightly confusing, it is more efficient to pass a result
         // buffer here instead of returning a new buffer from this function.
@@ -1354,9 +1362,9 @@ impl Board {
         // Leaf node, we are done.
         // Unless our king is in check, then extend the search by one ply.
 
-        if depth == 0 && self.is_in_check(self.color_to_move)? {
-            return self._find_next_move(1, pv, history, alpha, beta);
-        } else if depth == 0 {
+        if curr_depth == max_depth && self.is_in_check(self.color_to_move)? {
+            return self._find_next_move(curr_depth, max_depth + 1, pv, history, alpha, beta);
+        } else if curr_depth == max_depth {
             return Ok((None, evaluate_position(self, history)?, 1));
         }
 
@@ -1410,8 +1418,14 @@ impl Board {
             }
 
             // Evaluate board score at leaf nodes
-            let (_, score, subtree_node_count) =
-                moved_board._find_next_move(depth - 1, &mut child_pv, history, alpha, beta)?;
+            let (_, score, subtree_node_count) = moved_board._find_next_move(
+                curr_depth + 1,
+                max_depth,
+                &mut child_pv,
+                history,
+                alpha,
+                beta,
+            )?;
 
             node_count += subtree_node_count;
 
@@ -1490,7 +1504,8 @@ impl Board {
 
     fn _find_next_move_parallel(
         &self,
-        depth: u8,
+        curr_depth: u8,
+        max_depth: u8,
         // Principal variation result, used to return the best line found in this node.
         // Though slightly confusing, it is more efficient to pass a result
         // buffer here instead of returning a new buffer from this function.
@@ -1500,9 +1515,9 @@ impl Board {
         alpha: Score,
         beta: Score,
     ) -> Result<(Option<Move>, Score, u64)> {
-        if depth == 0 && self.is_in_check(self.color_to_move)? {
-            return self._find_next_move(1, pv, history, alpha, beta);
-        } else if depth == 0 {
+        if curr_depth == max_depth && self.is_in_check(self.color_to_move)? {
+            return self._find_next_move(curr_depth, max_depth + 1, pv, history, alpha, beta);
+        } else if curr_depth == max_depth {
             return Ok((None, evaluate_position(self, history)?, 1));
         }
 
@@ -1575,7 +1590,8 @@ impl Board {
                 //     )?
                 // } else {
                     moved_board._find_next_move(
-                        depth - 1,
+                        curr_depth + 1,
+                        max_depth,
                         &mut child_pv,
                         &mut history,
                         alpha,
