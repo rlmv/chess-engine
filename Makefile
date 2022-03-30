@@ -12,6 +12,9 @@ profile: release
 	sudo LOG_LEVEL=INFO LOG_STDOUT=TRUE /home/bo/.cargo/bin/flamegraph --output=${OUTPUT} ${BINARY}  fen ${POSITION_2} 9
 	firefox --new-tab file:///${PWD}/${OUTPUT}
 
+run: release
+	LOG_LEVEL=INFO LOG_STDOUT=TRUE ${BINARY} fen ${POSITION_2} 10
+
 # Great tutorial: http://sandsoftwaresound.net/perf/perf-tutorial-hot-spots/
 perf: release
 	LOG_LEVEL=INFO LOG_STDOUT=TRUE sudo perf record -e task-clock,cycles,branch-misses ${BINARY} fen ${POSITION_2} 9

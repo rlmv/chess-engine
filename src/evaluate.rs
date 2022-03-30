@@ -5,9 +5,7 @@ use crate::color::*;
 use crate::fen;
 use crate::mv::*;
 use crate::square::*;
-use crate::traversal_path::*;
 use core::cmp::Ordering;
-use std::cmp;
 use std::fmt;
 
 const CASTLE_BONUS: i32 = 30;

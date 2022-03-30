@@ -8,8 +8,8 @@ use crate::file::*;
 use crate::mv::*;
 use crate::rank::*;
 use crate::square::*;
-use crate::traversal_path::TraversalPath;
 use crate::vector::*;
+use crate::zobrist::*;
 use log::{debug, info};
 use std::cmp;
 use std::fmt;
@@ -235,11 +235,11 @@ where
 pub struct Piece(pub PieceEnum, pub Color);
 
 impl Piece {
-    fn piece(&self) -> PieceEnum {
+    pub fn piece(&self) -> PieceEnum {
         self.0
     }
 
-    fn color(&self) -> Color {
+    pub fn color(&self) -> Color {
         self.1
     }
 }
@@ -368,9 +368,9 @@ fn compute_attacks(
 
 // pinned pieces are all the defenders which stand between an attacking slider and the defenders king
 
-fn pinned_pieces(attackers: Presence, defenders: Presence) -> Bitboard {
-    Bitboard::empty()
-}
+// fn pinned_pieces(attackers: Presence, defenders: Presence) -> Bitboard {
+//     Bitboard::empty()
+// }
 
 #[derive(Clone, Eq, PartialEq, Debug, Hash)]
 pub struct Board {
@@ -482,6 +482,8 @@ impl Board {
         } else {
             new.halfmove_clock += 1
         }
+
+        compute_hash(&new);
 
         debug_assert!((self.presence_white.all & self.presence_black.all).is_empty());
         Ok(new)
@@ -1312,6 +1314,48 @@ impl Board {
 
     fn _queen_attacks(&self, from: Square, queen: &Piece) -> Bitboard {
         self._rook_attacks(from, queen) | self._bishop_attacks(from, queen)
+    }
+
+    pub fn all_pieces_of_color<'a>(
+        &'a self,
+        color: Color,
+    ) -> impl Iterator<Item = (Piece, Square)> + 'a {
+        let presence = self.presence_for(color);
+
+        presence
+            .pawn
+            .squares()
+            .map(move |s| (Piece(PAWN, color), s))
+            .chain(
+                presence
+                    .knight
+                    .squares()
+                    .map(move |s| (Piece(KNIGHT, color), s)),
+            )
+            .chain(
+                presence
+                    .bishop
+                    .squares()
+                    .map(move |s| (Piece(BISHOP, color), s)),
+            )
+            .chain(
+                presence
+                    .rook
+                    .squares()
+                    .map(move |s| (Piece(ROOK, color), s)),
+            )
+            .chain(
+                presence
+                    .queen
+                    .squares()
+                    .map(move |s| (Piece(QUEEN, color), s)),
+            )
+            .chain(
+                presence
+                    .king
+                    .squares()
+                    .map(move |s| (Piece(KING, color), s)),
+            )
     }
 
     // TODO: remove. Only kept for testing

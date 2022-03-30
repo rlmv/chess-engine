@@ -15,3 +15,5 @@ pub mod square;
 pub mod traversal_path;
 pub mod uci;
 pub mod vector;
+
+pub mod zobrist;
