@@ -25,6 +25,57 @@ pub use PieceEnum::*;
 pub type History = Vec<(Move, Color)>;
 pub type PV = Vec<Move>;
 
+struct StateHierarchy<'a> {
+    parent: Option<&'a StateHierarchy<'a>>,
+    bounds: Mutex<State>,
+}
+
+impl<'a> StateHierarchy<'a> {
+    // fn new(parent: Option<&'a ScoreHierarchy<'a>), alpha: Score, beta: Score) {
+
+    // }
+
+    fn sync_alpha_beta(&self) -> Result<(Score, Score)> {
+        match self.parent {
+            Some(parent) => {
+                let (parent_alpha, parent_beta) = parent.sync_alpha_beta()?;
+
+                let mut state = self
+                    .bounds
+                    .lock()
+                    .map_err(|_| IOError("Could not lock mutex".to_string()))?;
+
+                // if parent_alpha > state.alpha || parent_beta < state.beta {
+                //     println!("pulled parent bound");
+                // }
+
+                state.alpha = cmp::max(parent_alpha, state.alpha);
+                state.beta = cmp::min(parent_beta, state.beta);
+
+                Ok((state.alpha, state.beta))
+            }
+            None => {
+                let state = self
+                    .bounds
+                    .lock()
+                    .map_err(|_| IOError("Could not lock mutex".to_string()))?;
+
+                Ok((state.alpha, state.beta))
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+struct State {
+    best_move: Option<Move>,
+    best_score: Score,
+    pv: PV,
+    node_count: u64, // todo - atomic?
+    alpha: Score,
+    beta: Score,
+}
+
 /*
  * Convert a principal variation into a full history containing the color of
  * each move.
@@ -1319,14 +1370,8 @@ impl Board {
         let mut history: History = Vec::new();
 
         let curr_depth = 0;
-        let (mv, score, node_count) = self._find_next_move_parallel(
-            curr_depth,
-            max_depth,
-            &mut pv,
-            &mut history,
-            Score::MIN,
-            Score::MAX,
-        )?;
+        let (mv, score, node_count) =
+            self._find_next_move_parallel(curr_depth, max_depth, &mut pv, &mut history, None)?;
 
         let full_pv = full_history(pv, self.color_to_move);
 
@@ -1512,36 +1557,32 @@ impl Board {
         pv: &mut PV,
         // List of all moves made up to this point in the search tree (all ancestors)
         history: &mut History,
-        alpha: Score,
-        beta: Score,
+        // alpha: Score,
+        // beta: Score,
+        parent_alpha_beta: Option<&StateHierarchy>,
     ) -> Result<(Option<Move>, Score, u64)> {
+        let state_mutex = StateHierarchy {
+            parent: parent_alpha_beta,
+            bounds: Mutex::new(State {
+                best_move: None,
+                best_score: match self.color_to_move {
+                    WHITE => Score::MIN,
+                    BLACK => Score::MAX,
+                },
+                pv: Vec::new(),
+                node_count: 1,
+                alpha: Score::MIN,
+                beta: Score::MAX,
+            }),
+        };
+
+        let (alpha, beta) = state_mutex.sync_alpha_beta()?;
+
         if curr_depth == max_depth && self.is_in_check(self.color_to_move)? {
             return self._find_next_move(curr_depth, max_depth + 1, pv, history, alpha, beta);
         } else if curr_depth == max_depth {
             return Ok((None, evaluate_position(self, history)?, 1));
         }
-
-        #[derive(Debug)]
-        struct State {
-            best_move: Option<Move>,
-            best_score: Score,
-            pv: PV,
-            node_count: u64, // todo - atomic?
-            alpha: Score,
-            beta: Score,
-        };
-
-        let state_mutex = Mutex::new(State {
-            best_move: None,
-            best_score: match self.color_to_move {
-                WHITE => Score::MIN,
-                BLACK => Score::MAX,
-            },
-            pv: Vec::new(),
-            node_count: 1,
-            alpha: alpha,
-            beta: beta,
-        });
 
         let result = self
             .candidate_moves(history)
@@ -1555,9 +1596,14 @@ impl Board {
                 let mut history: History = history.clone();
                 history.push((mv, self.color_to_move));
 
+                //                let (alpha, beta) = state.read_alpha_beta()?;
+
+                state_mutex.sync_alpha_beta()?;
                 let state = state_mutex
+                    .bounds
                     .lock()
                     .map_err(|_| IOError("Could not lock mutex".to_string()))?;
+
                 let alpha = state.alpha;
                 let beta = state.beta;
 
@@ -1569,8 +1615,7 @@ impl Board {
                     alpha,
                     beta
                 );
-
-                drop(state); // be sure to drop mutex before long computation
+                drop(state);
 
                 if moved_board.is_in_check(self.color_to_move)? {
                     debug!(
@@ -1587,8 +1632,7 @@ impl Board {
                         max_depth,
                         &mut child_pv,
                         &mut history,
-                        alpha,
-                        beta,
+                        Some(&state_mutex),
                     )?
                 } else {
                     moved_board._find_next_move(
@@ -1602,6 +1646,7 @@ impl Board {
                 };
 
                 let mut state = state_mutex
+                    .bounds
                     .lock()
                     .map_err(|_| IOError("Could not lock mutex".to_string()))?;
 
@@ -1668,6 +1713,7 @@ impl Board {
         }
 
         let state = state_mutex
+            .bounds
             .lock()
             .map_err(|_| IOError("Could not lock mutex".to_string()))?;
 
