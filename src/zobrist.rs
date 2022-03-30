@@ -4,7 +4,7 @@ use crate::square::*;
 
 use lazy_static::lazy_static;
 
-type ZobristHash = u64;
+pub type ZobristHash = u64;
 
 /*
  * Compute the Zobrist hash for a board from scratch
@@ -24,7 +24,22 @@ pub fn compute_hash(board: &Board) -> ZobristHash {
         hash ^= *ZOBRIST_WHITE_TO_MOVE;
     }
 
-    // TODO: include castle rights
+    if board.can_castle.kingside_white {
+        hash ^= *ZOBRIST_CASTLE_KINGSIDE_WHITE
+    }
+
+    if board.can_castle.kingside_black {
+        hash ^= *ZOBRIST_CASTLE_KINGSIDE_BLACK
+    }
+
+    if board.can_castle.queenside_white {
+        hash ^= *ZOBRIST_CASTLE_QUEENSIDE_WHITE
+    }
+
+    if board.can_castle.queenside_black {
+        hash ^= *ZOBRIST_CASTLE_QUEENSIDE_BLACK
+    }
+
     // TODO: include move clocks?
 
     hash
@@ -43,6 +58,10 @@ lazy_static! {
     pub static ref ZOBRIST_WHITE: ZobristColor = init_constants();
     pub static ref ZOBRIST_BLACK: ZobristColor = init_constants();
     pub static ref ZOBRIST_WHITE_TO_MOVE: u64 = rand::random::<u64>();
+    pub static ref ZOBRIST_CASTLE_KINGSIDE_WHITE: u64 = rand::random::<u64>();
+    pub static ref ZOBRIST_CASTLE_KINGSIDE_BLACK: u64 = rand::random::<u64>();
+    pub static ref ZOBRIST_CASTLE_QUEENSIDE_WHITE: u64 = rand::random::<u64>();
+    pub static ref ZOBRIST_CASTLE_QUEENSIDE_BLACK: u64 = rand::random::<u64>();
 }
 
 fn rand_array() -> [u64; 64] {

@@ -1,4 +1,4 @@
-use crate::board::{Board, Result};
+use crate::board::*;
 #[cfg(test)]
 use crate::color::*;
 #[cfg(test)]

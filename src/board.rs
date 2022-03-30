@@ -12,6 +12,7 @@ use crate::vector::*;
 use crate::zobrist::*;
 use log::{debug, info};
 use std::cmp;
+use std::collections::HashMap;
 use std::fmt;
 
 use std::ops::{Generator, GeneratorState};
@@ -23,6 +24,7 @@ pub use PieceEnum::*;
 
 pub type History = Vec<(Move, Color)>;
 pub type PV = Vec<Move>;
+pub type MoveCache = HashMap<ZobristHash, (Move, u8)>;
 
 /*
  * Convert a principal variation into a full history containing the color of
@@ -53,15 +55,16 @@ impl fmt::Display for HistoryDisplay<'_> {
     }
 }
 
-pub fn move_generator(
-    board: &Board,
+pub fn move_generator<'a>(
+    board: &'a Board,
     last_move: Option<Move>,
-    hint: Option<Move>,
-) -> impl Iterator<Item = Move> + '_ {
+    cached_pv: Option<Move>,
+) -> impl Iterator<Item = Move> + 'a {
     GenIter(move || {
         // return
-        match hint {
-            Some(hint) => yield hint,
+        // TODO: don't duplicate and return this again later?
+        match cached_pv {
+            Some(mv) => yield mv,
             None => (),
         }
 
@@ -380,15 +383,16 @@ pub struct Board {
     halfmove_clock: u16,
     // Move #, incremented after Black plays
     fullmove_clock: u16,
-    can_castle: CastleRights,
+    pub can_castle: CastleRights,
 
     pub presence_white: Presence,
     pub presence_black: Presence,
+    zobrist_hash: ZobristHash,
 }
 
 impl Board {
     pub fn empty() -> Self {
-        Board {
+        let mut board = Board {
             color_to_move: WHITE,
             en_passant_target: None,
             halfmove_clock: 0,
@@ -396,7 +400,12 @@ impl Board {
             can_castle: CastleRights::none(),
             presence_white: Presence::empty(WHITE),
             presence_black: Presence::empty(BLACK),
-        }
+            zobrist_hash: 0,
+        };
+
+        board.zobrist_hash = compute_hash(&board);
+
+        board
     }
 
     fn presence_for(&self, color: Color) -> &Presence {
@@ -450,6 +459,8 @@ impl Board {
         ours.all |= bitboard![on];
         *ours.for_piece_mut(piece.piece()) |= bitboard![on];
 
+        new.zobrist_hash = compute_hash(&new);
+
         new
     }
 
@@ -483,9 +494,10 @@ impl Board {
             new.halfmove_clock += 1
         }
 
-        compute_hash(&new);
+        new.zobrist_hash = compute_hash(&new);
 
         debug_assert!((self.presence_white.all & self.presence_black.all).is_empty());
+
         Ok(new)
     }
 
@@ -891,11 +903,13 @@ impl Board {
         })
     }
 
-    // Return all candidate moves for single pieces, allowing illegal moves
-    // (e.g., that move the king into check)
-    fn candidate_moves(&self, history: &History) -> impl Iterator<Item = Move> + '_ {
-        return move_generator(self, history.last().map(|(mv, _)| *mv), None);
-    }
+    // // Return all candidate moves for single pieces, allowing illegal moves
+    // // (e.g., that move the king into check)
+    // fn candidate_moves(&self, history: &History) -> impl Iterator<Item = Move> + '_ {
+    //     // TODO: fix cache here
+    //     assert!(false);
+    //     return move_generator(self, history.last().map(|(mv, _)| *mv), &HashMap::new());
+    // }
 
     // // Return all legal moves for the given square, filtering out those that result in
     // // illegal states
@@ -916,7 +930,7 @@ impl Board {
             return Err(BoardError::IllegalMove(format!("Not {}'s turn", color)));
         }
 
-        for mv in self.candidate_moves(&mut Vec::new()) {
+        for mv in self.all_moves() {
             match mv {
                 Move::Promote {
                     from: source,
@@ -942,7 +956,7 @@ impl Board {
 
     // Return all moves possible for the given color, including castling and promotion
     pub fn all_moves(&self) -> impl Iterator<Item = Move> + '_ {
-        self.candidate_moves(&mut Vec::new())
+        move_generator(&self, None, None)
     }
 
     pub fn plus_vector(s: &Square, v: &MoveVector) -> Option<Square> {
@@ -1376,6 +1390,8 @@ impl Board {
         let mut score: Score = Score::ZERO;
         let mut node_count: u64 = 0;
 
+        let mut cache: MoveCache = HashMap::new();
+
         for i in 1..=max_depth {
             let curr_depth = 0;
             pv.clear();
@@ -1387,7 +1403,7 @@ impl Board {
                 &mut history,
                 Score::MIN,
                 Score::MAX,
-                mv,
+                &mut cache,
             )?;
             let full_pv = full_history(&pv, self.color_to_move);
 
@@ -1398,6 +1414,7 @@ impl Board {
                 HistoryDisplay(&full_pv),
                 node_count
             );
+            info!("Cache size: {}", cache.len());
         }
 
         let full_pv = full_history(&pv, self.color_to_move);
@@ -1423,7 +1440,7 @@ impl Board {
         history: &mut History,
         mut alpha: Score,
         mut beta: Score,
-        hint: Option<Move>,
+        cache: &mut MoveCache,
     ) -> Result<(Option<Move>, Score, u64)> {
         // Find all pieces
         // Generate all valid moves for those pieces.
@@ -1435,7 +1452,15 @@ impl Board {
         // Unless our king is in check, then extend the search by one ply.
 
         if curr_depth == max_depth && self.is_in_check(self.color_to_move)? {
-            return self._find_next_move(curr_depth, max_depth + 1, pv, history, alpha, beta, None);
+            return self._find_next_move(
+                curr_depth,
+                max_depth + 1,
+                pv,
+                history,
+                alpha,
+                beta,
+                cache,
+            );
         } else if curr_depth == max_depth {
             return Ok((None, evaluate_position(self, history)?, 1));
         }
@@ -1453,7 +1478,9 @@ impl Board {
         // Will hold the PV for each child move
         let mut child_pv: PV = Vec::new();
 
-        for mv in move_generator(self, history.last().map(|(mv, _)| *mv), hint) {
+        let cached_pv = cache.get(&self.zobrist_hash).map(|(mv, _)| *mv);
+
+        for mv in move_generator(self, history.last().map(|(mv, _)| *mv), cached_pv) {
             let moved_board = self.make_move(mv)?;
 
             // Add this node to the history, truncating to ensure sibling nodes
@@ -1497,7 +1524,7 @@ impl Board {
                 history,
                 alpha,
                 beta,
-                None,
+                cache,
             )?;
 
             node_count += subtree_node_count;
@@ -1548,7 +1575,7 @@ impl Board {
 
             if alpha >= beta {
                 debug!("Found α={} >= β={}. Pruning rest of node.", alpha, beta);
-                return Ok((Some(mv), score, node_count));
+                break;
             }
         }
 
@@ -1564,6 +1591,11 @@ impl Board {
                 debug!("Position is stalemate");
                 return Ok((None, Score::ZERO, 1));
             }
+        }
+
+        // TODO: cache other return values
+        if let Some(mv) = best_move {
+            cache.insert(self.zobrist_hash, (mv, 0));
         }
 
         Ok((best_move, best_score, node_count))
@@ -1593,7 +1625,7 @@ impl Board {
 
         debug!("{}: In check. Evaluating for checkmate", color);
 
-        for mv in self.all_moves() {
+        for mv in move_generator(self, None, None) {
             let moved_board = self.make_move(mv)?;
 
             // At least one way out!
