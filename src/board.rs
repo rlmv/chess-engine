@@ -1542,7 +1542,6 @@ impl Board {
                 let state = state_mutex
                     .lock()
                     .map_err(|_| IOError("Could not lock mutex".to_string()))?;
-                //                dbg!("start", mv, &state);
                 let alpha = state.alpha;
                 let beta = state.beta;
 
@@ -1629,19 +1628,12 @@ impl Board {
                     subtree_node_count
                 );
 
-                //                dbg!("end", mv, &state);
-
-                //                println!("end {}", mv);
-
                 Ok(())
             })?;
 
         let state = state_mutex
             .lock()
-            .map_err(|e| IOError("Could not lock mutex".to_string()))?;
-
-        // dbg!("here");
-        // dbg!(&state);
+            .map_err(|_| IOError("Could not lock mutex".to_string()))?;
 
         if state.best_move.is_none() {
             if self.is_in_check(self.color_to_move)? {
@@ -2425,7 +2417,7 @@ fn test_checkmate_opponent_king_and_rook_2_moves_black_to_move() {
 #[test]
 fn test_avoid_stalemate() {
     init();
-    let board = crate::fen::parse("6k1/6p1/4K1P1/7r/8/3q4/8/8 b - - 3 62").unwrap();
+    let board = crate::fen::parse("6k1/6p1/4K1P1/2p4r/2P3P1/2Pq4/8/8 b - - 3 62").unwrap();
 
     let (mv, _) = board.find_next_move(4).unwrap().unwrap();
     // Would be stalemate:
@@ -2434,7 +2426,7 @@ fn test_avoid_stalemate() {
     Puzzle::new(board)
         .should_find_move(H5, G5)
         .respond_with(E6, E7)
-        .should_find_move(A5, E5)
+        .should_find_move(G5, E5)
         .should_be_checkmate();
 }
 
