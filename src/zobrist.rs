@@ -1,11 +1,13 @@
 use crate::board::*;
 use crate::color::*;
 use crate::square::*;
+use std::default::Default;
+use std::hash::Hasher;
 use std::ops::BitXorAssign;
 
 use lazy_static::lazy_static;
 
-#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub struct ZobristHash(u64);
 
 impl ZobristHash {
@@ -155,6 +157,42 @@ fn constant_for_piece(piece: Piece, square: Square) -> ZobristHash {
     };
 
     for_piece[square.index()]
+}
+
+/*
+ * Custom hash implementation for Zobrist keys.
+ *
+ * Since the Zobrist key is already a hash, just use it directly instead of
+ * rehashing the value.
+ */
+pub struct ZobristHasher {
+    hash: u64,
+}
+
+impl Hasher for ZobristHasher {
+    // The hasher should only be used to write u64s. Hard error if used for
+    // another type.
+    #[inline]
+    fn write(&mut self, _: &[u8]) {
+        panic!("not implemented")
+    }
+
+    #[inline]
+    fn write_u64(&mut self, i: u64) {
+        // do not expect to write to this hasher more than once
+        debug_assert_eq!(self.hash, 0);
+        self.hash = i
+    }
+
+    #[inline]
+    fn finish(&self) -> u64 {
+        self.hash
+    }
+}
+impl Default for ZobristHasher {
+    fn default() -> Self {
+        Self { hash: 0 }
+    }
 }
 
 #[test]

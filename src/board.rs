@@ -12,8 +12,10 @@ use crate::vector::*;
 use crate::zobrist::*;
 use log::{debug, info};
 use std::cmp;
+
 use std::collections::HashMap;
 use std::fmt;
+use std::hash::BuildHasherDefault;
 
 use std::ops::{Generator, GeneratorState};
 use std::pin::Pin;
@@ -24,7 +26,7 @@ pub use PieceEnum::*;
 
 pub type History = Vec<(Move, Color)>;
 pub type PV = Vec<Move>;
-pub type MoveCache = HashMap<ZobristHash, (Move, u8)>;
+pub type MoveCache = HashMap<ZobristHash, (Move, u8), BuildHasherDefault<ZobristHasher>>;
 
 /*
  * Convert a principal variation into a full history containing the color of
@@ -1457,7 +1459,7 @@ impl Board {
         let mut score: Score = Score::ZERO;
         let mut node_count: u64 = 0;
 
-        let mut cache: MoveCache = HashMap::new();
+        let mut cache: MoveCache = HashMap::default();
 
         for i in 1..=max_depth {
             let curr_depth = 0;
