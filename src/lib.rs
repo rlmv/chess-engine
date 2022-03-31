@@ -14,6 +14,7 @@ pub mod rank;
 pub mod square;
 pub mod traversal_path;
 pub mod uci;
+pub mod util;
 pub mod vector;
 
 pub mod zobrist;

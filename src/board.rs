@@ -8,6 +8,7 @@ use crate::file::*;
 use crate::mv::*;
 use crate::rank::*;
 use crate::square::*;
+use crate::util::*;
 use crate::vector::*;
 use crate::zobrist::*;
 use log::{debug, info};
@@ -1491,13 +1492,13 @@ impl Board {
                 i,
                 score,
                 HistoryDisplay(&full_pv),
-                node_count
+                localize(node_count)
             );
             info!(
                 "Cache size: {}, full cache hits: {}, PV cache hits: {}",
-                cache.len(),
-                full_cache_hits,
-                pv_cache_hits
+                localize(cache.len()),
+                localize(full_cache_hits),
+                localize(pv_cache_hits)
             );
         }
 
@@ -1506,7 +1507,7 @@ impl Board {
             "Final: Main line score={}, path={}, node_count={}",
             score,
             HistoryDisplay(&full_pv),
-            node_count
+            localize(node_count)
         );
 
         Ok((mv, score, full_pv, node_count))

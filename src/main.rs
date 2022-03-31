@@ -2,6 +2,7 @@ use chess_engine::error::BoardError;
 use chess_engine::fen;
 use chess_engine::perft;
 use chess_engine::uci;
+use chess_engine::util::localize;
 use log::error;
 use log::LevelFilter;
 use log4rs::append::console::{ConsoleAppender, Target};
@@ -157,18 +158,4 @@ fn run_perft(fen: &String, depth: u8) -> () {
         elapsed.as_secs(),
         localize(result as u64 / elapsed.as_secs())
     );
-}
-
-// localize a number eg 10000000 -> 10,000,000
-fn localize<T: std::fmt::Display>(n: T) -> String {
-    let mut out = String::new();
-
-    for (i, char) in n.to_string().chars().rev().enumerate() {
-        if i % 3 == 0 && i != 0 {
-            out.push(',')
-        }
-        out.push(char);
-    }
-
-    out.chars().rev().collect()
 }
