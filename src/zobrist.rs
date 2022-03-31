@@ -96,19 +96,27 @@ pub fn compute_hash(board: &Board) -> ZobristHash {
         hash ^= ZOBRIST_EN_PASSANT_TARGET[en_passant_target.index()]
     }
 
-    // TODO: include en passant target
     // TODO: include move clocks?
 
     hash
 }
 
-pub struct ZobristColor {
-    pawn: [ZobristHash; 64],
-    bishop: [ZobristHash; 64],
-    knight: [ZobristHash; 64],
-    rook: [ZobristHash; 64],
-    queen: [ZobristHash; 64],
-    king: [ZobristHash; 64],
+fn constant_for_piece(piece: Piece, square: Square) -> ZobristHash {
+    let for_color: &ZobristColor = match piece.color() {
+        WHITE => &ZOBRIST_WHITE,
+        BLACK => &ZOBRIST_BLACK,
+    };
+
+    let for_piece: &[ZobristHash; 64] = match piece.piece() {
+        PAWN => &for_color.pawn,
+        KNIGHT => &for_color.knight,
+        BISHOP => &for_color.bishop,
+        ROOK => &for_color.rook,
+        QUEEN => &for_color.queen,
+        KING => &for_color.king,
+    };
+
+    for_piece[square.index()]
 }
 
 lazy_static! {
@@ -120,6 +128,15 @@ lazy_static! {
     pub static ref ZOBRIST_CASTLE_QUEENSIDE_WHITE: ZobristHash = rand_hash();
     pub static ref ZOBRIST_CASTLE_QUEENSIDE_BLACK: ZobristHash = rand_hash();
     pub static ref ZOBRIST_EN_PASSANT_TARGET: [ZobristHash; 64] = rand_array();
+}
+
+pub struct ZobristColor {
+    pawn: [ZobristHash; 64],
+    bishop: [ZobristHash; 64],
+    knight: [ZobristHash; 64],
+    rook: [ZobristHash; 64],
+    queen: [ZobristHash; 64],
+    king: [ZobristHash; 64],
 }
 
 fn rand_hash() -> ZobristHash {
@@ -139,24 +156,6 @@ fn rand_color() -> ZobristColor {
         queen: rand_array(),
         king: rand_array(),
     }
-}
-
-fn constant_for_piece(piece: Piece, square: Square) -> ZobristHash {
-    let for_color: &ZobristColor = match piece.color() {
-        WHITE => &ZOBRIST_WHITE,
-        BLACK => &ZOBRIST_BLACK,
-    };
-
-    let for_piece: &[ZobristHash; 64] = match piece.piece() {
-        PAWN => &for_color.pawn,
-        KNIGHT => &for_color.knight,
-        BISHOP => &for_color.bishop,
-        ROOK => &for_color.rook,
-        QUEEN => &for_color.queen,
-        KING => &for_color.king,
-    };
-
-    for_piece[square.index()]
 }
 
 /*
@@ -190,6 +189,7 @@ impl Hasher for ZobristHasher {
     }
 }
 impl Default for ZobristHasher {
+    #[inline]
     fn default() -> Self {
         Self { hash: 0 }
     }
