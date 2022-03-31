@@ -40,7 +40,37 @@ pub fn compute_hash(board: &Board) -> ZobristHash {
         hash ^= *ZOBRIST_CASTLE_QUEENSIDE_BLACK
     }
 
+    // TODO: include en passant target
     // TODO: include move clocks?
+
+    hash
+}
+
+#[inline]
+pub fn incremental_update(hash: ZobristHash, piece: Piece, square: Square) -> ZobristHash {
+    hash ^ constant_for_piece(piece, square)
+}
+
+#[inline]
+pub fn incremental_update_color_to_move(hash: ZobristHash) -> ZobristHash {
+    hash ^ *ZOBRIST_WHITE_TO_MOVE
+}
+
+// TODO
+pub fn block_update_castle_rights(hash: ZobristHash, can_castle: CastleRights) -> ZobristHash {
+    let mut hash = hash;
+    if can_castle.kingside_white {
+        hash ^= *ZOBRIST_CASTLE_KINGSIDE_WHITE
+    }
+    if can_castle.queenside_white {
+        hash ^= *ZOBRIST_CASTLE_QUEENSIDE_WHITE
+    }
+    if can_castle.kingside_black {
+        hash ^= *ZOBRIST_CASTLE_KINGSIDE_BLACK
+    }
+    if can_castle.queenside_black {
+        hash ^= *ZOBRIST_CASTLE_QUEENSIDE_BLACK
+    }
 
     hash
 }
@@ -104,5 +134,5 @@ fn test_zobrist_init() {
     let board = crate::fen::parse("5rk1/3n2pp/2p1p3/5pP1/1PPP4/8/5PP1/R5K1 b - - 0 26").unwrap();
 
     dbg!(compute_hash(&board));
-    assert!(false);
+    //    assert!(false);
 }

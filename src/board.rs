@@ -425,30 +425,35 @@ impl Board {
     pub fn with_color_to_move(&self, color: Color) -> Self {
         let mut new = self.clone();
         new.color_to_move = color;
+        new.zobrist_hash = compute_hash(&new);
         new
     }
 
     pub fn with_fullmove_clock(&self, i: u16) -> Self {
         let mut new = self.clone();
         new.fullmove_clock = i;
+        new.zobrist_hash = compute_hash(&new);
         new
     }
 
     pub fn with_halfmove_clock(&self, i: u16) -> Self {
         let mut new = self.clone();
         new.halfmove_clock = i;
+        new.zobrist_hash = compute_hash(&new);
         new
     }
 
     pub fn with_en_passant_target(&self, target: Option<Square>) -> Self {
         let mut new = self.clone();
         new.en_passant_target = target;
+        new.zobrist_hash = compute_hash(&new);
         new
     }
 
     pub fn with_castle_rights(&self, rights: CastleRights) -> Self {
         let mut new = self.clone();
         new.can_castle = rights;
+        new.zobrist_hash = compute_hash(&new);
         new
     }
 
@@ -469,6 +474,11 @@ impl Board {
     pub fn make_move(&self, mv: Move) -> Result<Board> {
         let mut new = self.clone();
 
+        // Castle rights are updated ad hoc. Zero them all out now then add them
+        // all back in after the move.
+        // TODO: do this conditionally, only if rights update
+        new.zobrist_hash = block_update_castle_rights(new.zobrist_hash, new.can_castle);
+
         match mv {
             Move::Single { from, to } => new.move_piece(from, to),
             Move::Promote { from, to, piece } => new.promote_pawn(from, to, piece),
@@ -476,10 +486,13 @@ impl Board {
             Move::CastleQueenside => new.castle_queenside(new.color_to_move),
         }?;
 
+        new.zobrist_hash = block_update_castle_rights(new.zobrist_hash, new.can_castle);
+
         // Clear old en passant target. If old and new are not equal that means
         // that new board has a new target and should be left alone.
         if new.en_passant_target == self.en_passant_target {
             new.en_passant_target = None;
+            // TODO
         }
 
         new.color_to_move = self.color_to_move.opposite();
@@ -494,9 +507,10 @@ impl Board {
             new.halfmove_clock += 1
         }
 
-        new.zobrist_hash = compute_hash(&new);
+        new.zobrist_hash = incremental_update_color_to_move(new.zobrist_hash);
 
         debug_assert!((self.presence_white.all & self.presence_black.all).is_empty());
+        debug_assert_eq!(new.zobrist_hash, compute_hash(&new));
 
         Ok(new)
     }
@@ -555,6 +569,13 @@ impl Board {
 
             self.can_castle.kingside_white = false;
             self.can_castle.queenside_white = false;
+
+            let rook = Piece(ROOK, self.color_to_move);
+            let king = Piece(KING, self.color_to_move);
+            self.zobrist_hash = incremental_update(self.zobrist_hash, king, E1);
+            self.zobrist_hash = incremental_update(self.zobrist_hash, king, G1);
+            self.zobrist_hash = incremental_update(self.zobrist_hash, rook, F1);
+            self.zobrist_hash = incremental_update(self.zobrist_hash, rook, H1);
         } else {
             let king_mask = bitboard!(E8, G8);
             let rook_mask = bitboard!(F8, H8);
@@ -567,6 +588,13 @@ impl Board {
 
             self.can_castle.kingside_black = false;
             self.can_castle.queenside_black = false;
+
+            let rook = Piece(ROOK, self.color_to_move);
+            let king = Piece(KING, self.color_to_move);
+            self.zobrist_hash = incremental_update(self.zobrist_hash, king, E8);
+            self.zobrist_hash = incremental_update(self.zobrist_hash, king, G8);
+            self.zobrist_hash = incremental_update(self.zobrist_hash, rook, F8);
+            self.zobrist_hash = incremental_update(self.zobrist_hash, rook, H8);
         }
 
         Ok(())
@@ -589,6 +617,13 @@ impl Board {
 
             self.can_castle.kingside_white = false;
             self.can_castle.queenside_white = false;
+
+            let rook = Piece(ROOK, self.color_to_move);
+            let king = Piece(KING, self.color_to_move);
+            self.zobrist_hash = incremental_update(self.zobrist_hash, king, E1);
+            self.zobrist_hash = incremental_update(self.zobrist_hash, king, C1);
+            self.zobrist_hash = incremental_update(self.zobrist_hash, rook, A1);
+            self.zobrist_hash = incremental_update(self.zobrist_hash, rook, D1);
         } else {
             let king_mask = bitboard!(C8, E8);
             let rook_mask = bitboard!(A8, D8);
@@ -601,6 +636,13 @@ impl Board {
 
             self.can_castle.kingside_black = false;
             self.can_castle.queenside_black = false;
+
+            let rook = Piece(ROOK, self.color_to_move);
+            let king = Piece(KING, self.color_to_move);
+            self.zobrist_hash = incremental_update(self.zobrist_hash, king, E8);
+            self.zobrist_hash = incremental_update(self.zobrist_hash, king, C8);
+            self.zobrist_hash = incremental_update(self.zobrist_hash, rook, A8);
+            self.zobrist_hash = incremental_update(self.zobrist_hash, rook, D8);
         }
 
         Ok(())
@@ -672,8 +714,9 @@ impl Board {
                 // between is computed by finding the difference between the
                 // absolute indices in the board array
                 self.en_passant_target = Some(Square::from_index((from.index() + to.index()) / 2))
+                //TODO
 
-            // Capture en passant
+                // Capture en passant
             } else if piece == PAWN
                 && self.en_passant_target == Some(to)
                 && self
@@ -687,12 +730,19 @@ impl Board {
                     BLACK => to.index() + N_FILES,
                 });
 
-                assert!(!self.is_empty(captured_square));
+                let captured_pawn = self
+                    .piece_on_square(captured_square)
+                    .ok_or(NoPieceOnFromSquare(captured_square))?;
+
+                assert_eq!(captured_pawn, Piece(PAWN, self.color_to_move.opposite()));
 
                 let theirs = self.presence_for_mut(self.color_to_move.opposite());
                 let mask = bitboard!(captured_square);
                 theirs.pawn ^= mask;
                 theirs.all ^= mask;
+
+                self.zobrist_hash =
+                    incremental_update(self.zobrist_hash, captured_pawn, captured_square);
             }
 
             // Update castling - moving off original squares
@@ -712,11 +762,6 @@ impl Board {
                 self.can_castle.queenside_black = false
             }
 
-            // Update castling - capturing rook
-            if let Some(captured) = self.piece_on_square(to) {
-                self.update_castle_rights(captured, to)
-            }
-
             // update bitboards
             let captured = self.piece_on_square(to);
             let ours = self.presence_for_mut(color);
@@ -730,10 +775,18 @@ impl Board {
             *ours.for_piece_mut(piece) ^= to_mask;
             ours.all ^= to_mask;
 
+            self.zobrist_hash = incremental_update(self.zobrist_hash, Piece(piece, color), from);
+            self.zobrist_hash = incremental_update(self.zobrist_hash, Piece(piece, color), to);
+
             if let Some(captured) = captured {
                 let theirs = self.presence_for_mut(captured.color());
                 *theirs.for_piece_mut(captured.piece()) ^= to_mask;
                 theirs.all ^= to_mask;
+
+                // Update castling - capturing rook
+                self.update_castle_rights(captured, to);
+
+                self.zobrist_hash = incremental_update(self.zobrist_hash, captured, to);
             }
         } else {
             return Err(NoPieceOnFromSquare(from));
@@ -769,6 +822,10 @@ impl Board {
         *ours.for_piece_mut(promote_to.piece()) |= promoted_mask;
         ours.all |= promoted_mask;
 
+        self.zobrist_hash =
+            incremental_update(self.zobrist_hash, Piece(PAWN, promote_to.color()), from);
+        self.zobrist_hash = incremental_update(self.zobrist_hash, promote_to, to);
+
         // in case of capture, remove the opponents piece
 
         if let Some(captured) = captured {
@@ -777,6 +834,8 @@ impl Board {
             theirs.all ^= promoted_mask;
 
             self.update_castle_rights(captured, to);
+
+            self.zobrist_hash = incremental_update(self.zobrist_hash, captured, to);
         }
 
         Ok(())
