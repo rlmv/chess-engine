@@ -40,6 +40,10 @@ pub fn compute_hash(board: &Board) -> ZobristHash {
         hash ^= *ZOBRIST_CASTLE_QUEENSIDE_BLACK
     }
 
+    if let Some(en_passant_target) = board.en_passant_target {
+        hash ^= ZOBRIST_EN_PASSANT_TARGET[en_passant_target.index()]
+    }
+
     // TODO: include en passant target
     // TODO: include move clocks?
 
@@ -75,6 +79,11 @@ pub fn block_update_castle_rights(hash: ZobristHash, can_castle: CastleRights) -
     hash
 }
 
+#[inline]
+pub fn incremental_update_en_passant_target(hash: ZobristHash, square: Square) -> ZobristHash {
+    hash ^ ZOBRIST_EN_PASSANT_TARGET[square.index()]
+}
+
 pub struct ZobristColor {
     pawn: [u64; 64],
     bishop: [u64; 64],
@@ -85,20 +94,21 @@ pub struct ZobristColor {
 }
 
 lazy_static! {
-    pub static ref ZOBRIST_WHITE: ZobristColor = init_constants();
-    pub static ref ZOBRIST_BLACK: ZobristColor = init_constants();
+    pub static ref ZOBRIST_WHITE: ZobristColor = rand_color();
+    pub static ref ZOBRIST_BLACK: ZobristColor = rand_color();
     pub static ref ZOBRIST_WHITE_TO_MOVE: u64 = rand::random::<u64>();
     pub static ref ZOBRIST_CASTLE_KINGSIDE_WHITE: u64 = rand::random::<u64>();
     pub static ref ZOBRIST_CASTLE_KINGSIDE_BLACK: u64 = rand::random::<u64>();
     pub static ref ZOBRIST_CASTLE_QUEENSIDE_WHITE: u64 = rand::random::<u64>();
     pub static ref ZOBRIST_CASTLE_QUEENSIDE_BLACK: u64 = rand::random::<u64>();
+    pub static ref ZOBRIST_EN_PASSANT_TARGET: [u64; 64] = rand_array();
 }
 
 fn rand_array() -> [u64; 64] {
     [(); 64].map(|_| rand::random::<u64>())
 }
 
-fn init_constants() -> ZobristColor {
+fn rand_color() -> ZobristColor {
     ZobristColor {
         pawn: rand_array(),
         bishop: rand_array(),

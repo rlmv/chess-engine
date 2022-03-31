@@ -378,7 +378,7 @@ fn compute_attacks(
 #[derive(Clone, Eq, PartialEq, Debug, Hash)]
 pub struct Board {
     pub color_to_move: Color,
-    en_passant_target: Option<Square>,
+    pub en_passant_target: Option<Square>,
     // # of moves since last capture or pawn advance. For enforcing the 50-move rule.
     halfmove_clock: u16,
     // Move #, incremented after Black plays
@@ -479,21 +479,21 @@ impl Board {
         // TODO: do this conditionally, only if rights update
         new.zobrist_hash = block_update_castle_rights(new.zobrist_hash, new.can_castle);
 
+        // Clear old en passant target.
+        if let Some(old_en_passant_target) = self.en_passant_target {
+            new.en_passant_target = None;
+            new.zobrist_hash =
+                incremental_update_en_passant_target(new.zobrist_hash, old_en_passant_target);
+        }
+
         match mv {
-            Move::Single { from, to } => new.move_piece(from, to),
+            Move::Single { from, to } => new.move_piece(from, to, self.en_passant_target),
             Move::Promote { from, to, piece } => new.promote_pawn(from, to, piece),
             Move::CastleKingside => new.castle_kingside(new.color_to_move),
             Move::CastleQueenside => new.castle_queenside(new.color_to_move),
         }?;
 
         new.zobrist_hash = block_update_castle_rights(new.zobrist_hash, new.can_castle);
-
-        // Clear old en passant target. If old and new are not equal that means
-        // that new board has a new target and should be left alone.
-        if new.en_passant_target == self.en_passant_target {
-            new.en_passant_target = None;
-            // TODO
-        }
 
         new.color_to_move = self.color_to_move.opposite();
 
@@ -696,7 +696,12 @@ impl Board {
         allowed
     }
 
-    fn move_piece(&mut self, from: Square, to: Square) -> Result<()> {
+    fn move_piece(
+        &mut self,
+        from: Square,
+        to: Square,
+        old_en_passant_target: Option<Square>,
+    ) -> Result<()> {
         if let Some(Piece(piece, color)) = self.piece_on_square(from) {
             if color != self.color_to_move {
                 return Err(IllegalMove(format!(
@@ -713,14 +718,16 @@ impl Board {
                 // Because from and to are on the same file the square in
                 // between is computed by finding the difference between the
                 // absolute indices in the board array
-                self.en_passant_target = Some(Square::from_index((from.index() + to.index()) / 2))
-                //TODO
+                let en_passant_target = Square::from_index((from.index() + to.index()) / 2);
+                self.en_passant_target = Some(en_passant_target);
+
+                self.zobrist_hash =
+                    incremental_update_en_passant_target(self.zobrist_hash, en_passant_target);
 
                 // Capture en passant
             } else if piece == PAWN
-                && self.en_passant_target == Some(to)
-                && self
-                    .en_passant_target
+                && old_en_passant_target == Some(to)
+                && old_en_passant_target
                     .map(|target| self.is_empty(target))
                     .unwrap_or(false)
             {
