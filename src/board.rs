@@ -400,7 +400,7 @@ impl Board {
             can_castle: CastleRights::none(),
             presence_white: Presence::empty(WHITE),
             presence_black: Presence::empty(BLACK),
-            zobrist_hash: 0,
+            zobrist_hash: ZobristHash::new(),
         };
 
         board.zobrist_hash = compute_hash(&board);
@@ -477,13 +477,14 @@ impl Board {
         // Castle rights are updated ad hoc. Zero them all out now then add them
         // all back in after the move.
         // TODO: do this conditionally, only if rights update
-        new.zobrist_hash = block_update_castle_rights(new.zobrist_hash, new.can_castle);
+        new.zobrist_hash.toggle_castle_rights(new.can_castle);
 
         // Clear old en passant target.
         if let Some(old_en_passant_target) = self.en_passant_target {
             new.en_passant_target = None;
-            new.zobrist_hash =
-                incremental_update_en_passant_target(new.zobrist_hash, old_en_passant_target);
+
+            new.zobrist_hash
+                .toggle_en_passant_target(old_en_passant_target);
         }
 
         match mv {
@@ -493,7 +494,7 @@ impl Board {
             Move::CastleQueenside => new.castle_queenside(new.color_to_move),
         }?;
 
-        new.zobrist_hash = block_update_castle_rights(new.zobrist_hash, new.can_castle);
+        new.zobrist_hash.toggle_castle_rights(new.can_castle);
 
         new.color_to_move = self.color_to_move.opposite();
 
@@ -507,7 +508,7 @@ impl Board {
             new.halfmove_clock += 1
         }
 
-        new.zobrist_hash = incremental_update_color_to_move(new.zobrist_hash);
+        new.zobrist_hash.toggle_color_to_move();
 
         debug_assert!((self.presence_white.all & self.presence_black.all).is_empty());
         debug_assert_eq!(new.zobrist_hash, compute_hash(&new));
@@ -572,10 +573,10 @@ impl Board {
 
             let rook = Piece(ROOK, self.color_to_move);
             let king = Piece(KING, self.color_to_move);
-            self.zobrist_hash = incremental_update(self.zobrist_hash, king, E1);
-            self.zobrist_hash = incremental_update(self.zobrist_hash, king, G1);
-            self.zobrist_hash = incremental_update(self.zobrist_hash, rook, F1);
-            self.zobrist_hash = incremental_update(self.zobrist_hash, rook, H1);
+            self.zobrist_hash.toggle_piece(king, E1);
+            self.zobrist_hash.toggle_piece(king, G1);
+            self.zobrist_hash.toggle_piece(rook, F1);
+            self.zobrist_hash.toggle_piece(rook, H1);
         } else {
             let king_mask = bitboard!(E8, G8);
             let rook_mask = bitboard!(F8, H8);
@@ -591,10 +592,10 @@ impl Board {
 
             let rook = Piece(ROOK, self.color_to_move);
             let king = Piece(KING, self.color_to_move);
-            self.zobrist_hash = incremental_update(self.zobrist_hash, king, E8);
-            self.zobrist_hash = incremental_update(self.zobrist_hash, king, G8);
-            self.zobrist_hash = incremental_update(self.zobrist_hash, rook, F8);
-            self.zobrist_hash = incremental_update(self.zobrist_hash, rook, H8);
+            self.zobrist_hash.toggle_piece(king, E8);
+            self.zobrist_hash.toggle_piece(king, G8);
+            self.zobrist_hash.toggle_piece(rook, F8);
+            self.zobrist_hash.toggle_piece(rook, H8);
         }
 
         Ok(())
@@ -620,10 +621,10 @@ impl Board {
 
             let rook = Piece(ROOK, self.color_to_move);
             let king = Piece(KING, self.color_to_move);
-            self.zobrist_hash = incremental_update(self.zobrist_hash, king, E1);
-            self.zobrist_hash = incremental_update(self.zobrist_hash, king, C1);
-            self.zobrist_hash = incremental_update(self.zobrist_hash, rook, A1);
-            self.zobrist_hash = incremental_update(self.zobrist_hash, rook, D1);
+            self.zobrist_hash.toggle_piece(king, E1);
+            self.zobrist_hash.toggle_piece(king, C1);
+            self.zobrist_hash.toggle_piece(rook, A1);
+            self.zobrist_hash.toggle_piece(rook, D1);
         } else {
             let king_mask = bitboard!(C8, E8);
             let rook_mask = bitboard!(A8, D8);
@@ -639,10 +640,10 @@ impl Board {
 
             let rook = Piece(ROOK, self.color_to_move);
             let king = Piece(KING, self.color_to_move);
-            self.zobrist_hash = incremental_update(self.zobrist_hash, king, E8);
-            self.zobrist_hash = incremental_update(self.zobrist_hash, king, C8);
-            self.zobrist_hash = incremental_update(self.zobrist_hash, rook, A8);
-            self.zobrist_hash = incremental_update(self.zobrist_hash, rook, D8);
+            self.zobrist_hash.toggle_piece(king, E8);
+            self.zobrist_hash.toggle_piece(king, C8);
+            self.zobrist_hash.toggle_piece(rook, A8);
+            self.zobrist_hash.toggle_piece(rook, D8);
         }
 
         Ok(())
@@ -721,8 +722,8 @@ impl Board {
                 let en_passant_target = Square::from_index((from.index() + to.index()) / 2);
                 self.en_passant_target = Some(en_passant_target);
 
-                self.zobrist_hash =
-                    incremental_update_en_passant_target(self.zobrist_hash, en_passant_target);
+                self.zobrist_hash
+                    .toggle_en_passant_target(en_passant_target);
 
                 // Capture en passant
             } else if piece == PAWN
@@ -748,8 +749,8 @@ impl Board {
                 theirs.pawn ^= mask;
                 theirs.all ^= mask;
 
-                self.zobrist_hash =
-                    incremental_update(self.zobrist_hash, captured_pawn, captured_square);
+                self.zobrist_hash
+                    .toggle_piece(captured_pawn, captured_square);
             }
 
             // Update castling - moving off original squares
@@ -782,8 +783,8 @@ impl Board {
             *ours.for_piece_mut(piece) ^= to_mask;
             ours.all ^= to_mask;
 
-            self.zobrist_hash = incremental_update(self.zobrist_hash, Piece(piece, color), from);
-            self.zobrist_hash = incremental_update(self.zobrist_hash, Piece(piece, color), to);
+            self.zobrist_hash.toggle_piece(Piece(piece, color), from);
+            self.zobrist_hash.toggle_piece(Piece(piece, color), to);
 
             if let Some(captured) = captured {
                 let theirs = self.presence_for_mut(captured.color());
@@ -793,7 +794,7 @@ impl Board {
                 // Update castling - capturing rook
                 self.update_castle_rights(captured, to);
 
-                self.zobrist_hash = incremental_update(self.zobrist_hash, captured, to);
+                self.zobrist_hash.toggle_piece(captured, to);
             }
         } else {
             return Err(NoPieceOnFromSquare(from));
@@ -829,9 +830,9 @@ impl Board {
         *ours.for_piece_mut(promote_to.piece()) |= promoted_mask;
         ours.all |= promoted_mask;
 
-        self.zobrist_hash =
-            incremental_update(self.zobrist_hash, Piece(PAWN, promote_to.color()), from);
-        self.zobrist_hash = incremental_update(self.zobrist_hash, promote_to, to);
+        self.zobrist_hash
+            .toggle_piece(Piece(PAWN, promote_to.color()), from);
+        self.zobrist_hash.toggle_piece(promote_to, to);
 
         // in case of capture, remove the opponents piece
 
@@ -842,7 +843,7 @@ impl Board {
 
             self.update_castle_rights(captured, to);
 
-            self.zobrist_hash = incremental_update(self.zobrist_hash, captured, to);
+            self.zobrist_hash.toggle_piece(captured, to);
         }
 
         Ok(())
