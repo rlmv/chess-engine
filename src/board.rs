@@ -26,7 +26,11 @@ pub use PieceEnum::*;
 
 pub type History = Vec<(Move, Color)>;
 pub type PV = Vec<Move>;
-pub type MoveCache = HashMap<ZobristHash, (Move, u8), BuildHasherDefault<ZobristHasher>>;
+pub type Depth = u8;
+
+// depth here is the depth searched from this node to the leaf, i.e. the length of the PV
+pub type MoveCache =
+    HashMap<ZobristHash, (Option<Move>, Depth, Score), BuildHasherDefault<ZobristHasher>>;
 
 /*
  * Convert a principal variation into a full history containing the color of
@@ -1465,6 +1469,8 @@ impl Board {
             let curr_depth = 0;
             pv.clear();
             history.clear();
+
+            let mut full_cache_hits = 0;
             let mut pv_cache_hits = 0;
 
             (mv, score, node_count) = self._find_next_move(
@@ -1475,6 +1481,7 @@ impl Board {
                 Score::MIN,
                 Score::MAX,
                 &mut cache,
+                &mut full_cache_hits,
                 &mut pv_cache_hits,
             )?;
             let full_pv = full_history(&pv, self.color_to_move);
@@ -1487,8 +1494,9 @@ impl Board {
                 node_count
             );
             info!(
-                "Cache size: {}, PV cache hits: {}",
+                "Cache size: {}, full cache hits: {}, PV cache hits: {}",
                 cache.len(),
+                full_cache_hits,
                 pv_cache_hits
             );
         }
@@ -1517,13 +1525,43 @@ impl Board {
         mut alpha: Score,
         mut beta: Score,
         cache: &mut MoveCache,
+        full_cache_hit: &mut u64,
         pv_cache_hit: &mut u64,
     ) -> Result<(Option<Move>, Score, u64)> {
+        /*
+         * Cache this node in the PV cache.
+         */
+        #[macro_export]
+        macro_rules! cache_result {
+            ( $mv:expr, $score:expr, $node_count:expr ) => {{
+                cache.insert(self.zobrist_hash, ($mv, pv.len() as u8, $score));
+                ($mv, $score, $node_count)
+            }};
+        }
+
         // Find all pieces
         // Generate all valid moves for those pieces.
         // After each move, must not be in check - prune.
         // Make each move - evaluate the position.
         // Pick highest scoring move
+
+        let cached_pv = cache.get(&self.zobrist_hash);
+
+        if let Some((cached_mv, cached_depth, cached_score)) = cached_pv {
+            if *cached_depth >= max_depth - curr_depth {
+                *full_cache_hit += 1;
+                return Ok((*cached_mv, *cached_score, 1));
+            } else if cached_mv.is_none()
+                && (*cached_score == Score::checkmate_white()
+                    || *cached_score == Score::checkmate_black())
+            {
+                // checkmate, but the depth won't be deep enough
+                *full_cache_hit += 1;
+                return Ok((None, *cached_score, 1));
+            } else {
+                *pv_cache_hit += 1;
+            }
+        }
 
         // Leaf node, we are done.
         // Unless our king is in check, then extend the search by one ply.
@@ -1537,9 +1575,11 @@ impl Board {
                 alpha,
                 beta,
                 cache,
+                full_cache_hit,
                 pv_cache_hit,
             );
         } else if curr_depth == max_depth {
+            // Don't cache leaf nodes, the values are not useful
             return Ok((None, evaluate_position(self, history)?, 1));
         }
 
@@ -1556,13 +1596,11 @@ impl Board {
         // Will hold the PV for each child move
         let mut child_pv: PV = Vec::new();
 
-        let cached_pv = cache.get(&self.zobrist_hash).map(|(mv, _)| *mv);
-
-        if cached_pv.is_some() {
-            *pv_cache_hit += 1;
-        }
-
-        for mv in move_generator(self, history.last().map(|(mv, _)| *mv), cached_pv) {
+        for mv in move_generator(
+            self,
+            history.last().map(|(mv, _)| *mv),
+            cached_pv.map(|(mv, _, _)| *mv).flatten(),
+        ) {
             let moved_board = self.make_move(mv)?;
 
             // Add this node to the history, truncating to ensure sibling nodes
@@ -1607,6 +1645,7 @@ impl Board {
                 alpha,
                 beta,
                 cache,
+                full_cache_hit,
                 pv_cache_hit,
             )?;
 
@@ -1667,21 +1706,16 @@ impl Board {
             if self.is_in_check(self.color_to_move)? {
                 debug!("Position is checkmate for {}", self.color_to_move);
                 return match self.color_to_move {
-                    WHITE => Ok((None, Score::checkmate_white(), 1)),
-                    BLACK => Ok((None, Score::checkmate_black(), 1)),
+                    WHITE => Ok(cache_result!(None, Score::checkmate_white(), 1)),
+                    BLACK => Ok(cache_result!(None, Score::checkmate_black(), 1)),
                 };
             } else {
                 debug!("Position is stalemate");
-                return Ok((None, Score::ZERO, 1));
+                return Ok(cache_result!(None, Score::ZERO, 1));
             }
         }
 
-        // TODO: cache other return values
-        if let Some(mv) = best_move {
-            cache.insert(self.zobrist_hash, (mv, 0));
-        }
-
-        Ok((best_move, best_score, node_count))
+        Ok(cache_result!(best_move, best_score, node_count))
     }
 
     // Open files are files containing no pawns
