@@ -17,7 +17,7 @@ run: release
 
 # Great tutorial: http://sandsoftwaresound.net/perf/perf-tutorial-hot-spots/
 perf: release
-	LOG_LEVEL=INFO LOG_STDOUT=TRUE sudo perf record -e task-clock,cycles,branch-misses ${BINARY} fen ${POSITION_2} 9
+	sudo LOG_LEVEL=INFO LOG_STDOUT=TRUE perf record -e task-clock,cycles,branch-misses ${BINARY} fen ${POSITION_2} 9
 	sudo chown bo:bo perf.data
 
 stat: release

@@ -1465,6 +1465,8 @@ impl Board {
             let curr_depth = 0;
             pv.clear();
             history.clear();
+            let mut pv_cache_hits = 0;
+
             (mv, score, node_count) = self._find_next_move(
                 curr_depth,
                 i,
@@ -1473,6 +1475,7 @@ impl Board {
                 Score::MIN,
                 Score::MAX,
                 &mut cache,
+                &mut pv_cache_hits,
             )?;
             let full_pv = full_history(&pv, self.color_to_move);
 
@@ -1483,7 +1486,11 @@ impl Board {
                 HistoryDisplay(&full_pv),
                 node_count
             );
-            info!("Cache size: {}", cache.len());
+            info!(
+                "Cache size: {}, PV cache hits: {}",
+                cache.len(),
+                pv_cache_hits
+            );
         }
 
         let full_pv = full_history(&pv, self.color_to_move);
@@ -1510,6 +1517,7 @@ impl Board {
         mut alpha: Score,
         mut beta: Score,
         cache: &mut MoveCache,
+        pv_cache_hit: &mut u64,
     ) -> Result<(Option<Move>, Score, u64)> {
         // Find all pieces
         // Generate all valid moves for those pieces.
@@ -1529,6 +1537,7 @@ impl Board {
                 alpha,
                 beta,
                 cache,
+                pv_cache_hit,
             );
         } else if curr_depth == max_depth {
             return Ok((None, evaluate_position(self, history)?, 1));
@@ -1548,6 +1557,10 @@ impl Board {
         let mut child_pv: PV = Vec::new();
 
         let cached_pv = cache.get(&self.zobrist_hash).map(|(mv, _)| *mv);
+
+        if cached_pv.is_some() {
+            *pv_cache_hit += 1;
+        }
 
         for mv in move_generator(self, history.last().map(|(mv, _)| *mv), cached_pv) {
             let moved_board = self.make_move(mv)?;
@@ -1594,6 +1607,7 @@ impl Board {
                 alpha,
                 beta,
                 cache,
+                pv_cache_hit,
             )?;
 
             node_count += subtree_node_count;
