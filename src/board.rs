@@ -1712,9 +1712,10 @@ impl Board {
                 subtree_node_count
             );
 
+            // Cutoff. Do not store the cutoff in the transposition table
             if alpha >= beta {
                 debug!("Found α={} >= β={}. Pruning rest of node.", alpha, beta);
-                break;
+                return Ok((best_move, best_score, node_count));
             }
         }
 
