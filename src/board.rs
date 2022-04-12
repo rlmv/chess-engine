@@ -28,6 +28,7 @@ pub use PieceEnum::*;
 pub type History = Vec<(Move, Color)>;
 pub type PV = Vec<Move>;
 pub type Depth = u8;
+pub type NodeCount = u64;
 
 // depth here is the depth searched from this node to the leaf, i.e. the length of the PV
 pub type MoveCache =
@@ -1518,7 +1519,7 @@ impl Board {
         curr_depth: u8,
         max_depth: u8,
         // Principal variation result, used to return the best line found in this node.
-        // Though slightly confusing, it is more efficient to pass a result
+        // Though slightly confusing, it is more efficient to fill a result
         // buffer here instead of returning a new buffer from this function.
         pv: &mut PV,
         // List of all moves made up to this point in the search tree (all ancestors)
@@ -1528,14 +1529,14 @@ impl Board {
         cache: &mut MoveCache,
         full_cache_hit: &mut u64,
         pv_cache_hit: &mut u64,
-    ) -> Result<(Option<Move>, Score, u64)> {
+    ) -> Result<(Option<Move>, Score, NodeCount)> {
         /*
          * Cache this node in the PV cache.
          */
         #[macro_export]
         macro_rules! cache_result {
-            ( $mv:expr, $score:expr, $node_count:expr ) => {{
-                cache.insert(self.zobrist_hash, ($mv, pv.len() as u8, $score));
+            ( $mv:expr, $score:expr, $node_count:expr, $depth:expr ) => {{
+                cache.insert(self.zobrist_hash, ($mv, $depth, $score));
                 ($mv, $score, $node_count)
             }};
         }
@@ -1549,16 +1550,31 @@ impl Board {
         let cached_pv = cache.get(&self.zobrist_hash);
 
         if let Some((cached_mv, cached_depth, cached_score)) = cached_pv {
-            if *cached_depth >= max_depth - curr_depth {
+            // found position in cache, and we have already searched it
+            // deep enough.
+            if cached_mv.is_some() && *cached_depth >= max_depth - curr_depth {
+                if *cached_mv == Some(Move::Single { from: G8, to: E7 }) {
+                    dbg!("problem");
+                    dbg!(cached_pv, max_depth, curr_depth);
+                }
                 *full_cache_hit += 1;
+                pv.clear();
+                pv.push(cached_mv.unwrap());
                 return Ok((*cached_mv, *cached_score, 1));
+
+            // found position in cache to be checkmate, obviously won't have
+            // searched deep enough to be caught by previous condition
             } else if cached_mv.is_none()
                 && (*cached_score == Score::checkmate_white()
                     || *cached_score == Score::checkmate_black())
             {
-                // checkmate, but the depth won't be deep enough
                 *full_cache_hit += 1;
+                pv.clear();
+                // pv.push(*cached_mv);
                 return Ok((None, *cached_score, 1));
+
+            // found position in cache, but have not searched deep
+            // enough. However, we can check the PV of the cached position first
             } else {
                 *pv_cache_hit += 1;
             }
@@ -1661,7 +1677,7 @@ impl Board {
                     alpha = cmp::max(alpha, score);
                     if score > best_score
                     // shortest line is best, this picks the quickest forced mate sequence
-                       || (score == best_score && child_pv.len() + 1 < pv.len())
+                    //   || (score == best_score && child_pv.len() + 1 < pv.len())
                     {
                         best_score = score;
                         best_move = Some(mv);
@@ -1707,16 +1723,22 @@ impl Board {
             if self.is_in_check(self.color_to_move)? {
                 debug!("Position is checkmate for {}", self.color_to_move);
                 return match self.color_to_move {
-                    WHITE => Ok(cache_result!(None, Score::checkmate_white(), 1)),
-                    BLACK => Ok(cache_result!(None, Score::checkmate_black(), 1)),
+                    WHITE => Ok(cache_result!(None::<Move>, Score::checkmate_white(), 1, 0)),
+                    BLACK => Ok(cache_result!(None::<Move>, Score::checkmate_black(), 1, 0)),
                 };
             } else {
                 debug!("Position is stalemate");
-                return Ok(cache_result!(None, Score::ZERO, 1));
+                return Ok(cache_result!(None::<Move>, Score::ZERO, 1, 0));
             }
         }
 
-        Ok(cache_result!(best_move, best_score, node_count))
+        // TODO: do not overwrite existing cache entries?
+        Ok(cache_result!(
+            best_move,
+            best_score,
+            node_count,
+            max_depth - curr_depth // searched to this depth, nominally. could be more with extensions
+        ))
     }
 
     // Open files are files containing no pawns
@@ -3099,4 +3121,13 @@ fn compute_open_files() {
     let board =
         crate::fen::parse("3q1rk1/1pp1p1pp/2np4/8/6b1/2N2N2/1PPPP1P1/R1BQK2R w KQ - 0 1").unwrap();
     assert_eq!(board.open_files(), A_FILE | F_FILE)
+}
+
+#[test]
+fn test_iterative_deepening_bug() {
+    let board =
+        crate::fen::parse("r1bqk2r/1pp2pp1/p1p5/7p/3Nn3/5P2/PPP3PP/R1BQ1RK1 b kq - 0 12").unwrap();
+
+    let (mv, _) = board.find_next_move(8).unwrap().unwrap();
+    assert_eq!(mv, Move::Single { from: E4, to: D6 });
 }

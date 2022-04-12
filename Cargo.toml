@@ -24,3 +24,4 @@ itertools = "0.10"
 [[bench]]
 name = "benchmarks"
 harness = false
+
