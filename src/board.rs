@@ -31,8 +31,11 @@ pub type Depth = u8;
 pub type NodeCount = u64;
 
 // depth here is the depth searched from this node to the leaf, i.e. the length of the PV
-pub type MoveCache =
-    HashMap<ZobristHash, (Option<Move>, Depth, Score), BuildHasherDefault<ZobristHasher>>;
+pub type MoveCache = HashMap<
+    ZobristHash,
+    (Option<Move>, Depth, Score, Vec<Move>),
+    BuildHasherDefault<ZobristHasher>,
+>;
 
 /*
  * Convert a principal variation into a full history containing the color of
@@ -1535,8 +1538,8 @@ impl Board {
          */
         #[macro_export]
         macro_rules! cache_result {
-            ( $mv:expr, $score:expr, $node_count:expr, $depth:expr ) => {{
-                cache.insert(self.zobrist_hash, ($mv, $depth, $score));
+            ( $mv:expr, $score:expr, $node_count:expr, $depth:expr, $pv:expr ) => {{
+                cache.insert(self.zobrist_hash, ($mv, $depth, $score, $pv));
                 ($mv, $score, $node_count)
             }};
         }
@@ -1549,17 +1552,13 @@ impl Board {
 
         let cached_pv = cache.get(&self.zobrist_hash);
 
-        if let Some((cached_mv, cached_depth, cached_score)) = cached_pv {
+        if let Some((cached_mv, cached_depth, cached_score, cached_line)) = cached_pv {
             // found position in cache, and we have already searched it
             // deep enough.
-            if cached_mv.is_some() && *cached_depth >= max_depth - curr_depth {
-                if *cached_mv == Some(Move::Single { from: G8, to: E7 }) {
-                    dbg!("problem");
-                    dbg!(cached_pv, max_depth, curr_depth);
-                }
+            if cached_mv.is_some() && cached_line.len() >= (max_depth - curr_depth).into() {
                 *full_cache_hit += 1;
                 pv.clear();
-                pv.push(cached_mv.unwrap());
+                pv.extend(cached_line);
                 return Ok((*cached_mv, *cached_score, 1));
 
             // found position in cache to be checkmate, obviously won't have
@@ -1570,7 +1569,7 @@ impl Board {
             {
                 *full_cache_hit += 1;
                 pv.clear();
-                // pv.push(*cached_mv);
+                pv.extend(cached_line);
                 return Ok((None, *cached_score, 1));
 
             // found position in cache, but have not searched deep
@@ -1616,7 +1615,7 @@ impl Board {
         for mv in move_generator(
             self,
             history.last().map(|(mv, _)| *mv),
-            cached_pv.map(|(mv, _, _)| *mv).flatten(),
+            cached_pv.map(|(mv, _, _, _)| *mv).flatten(),
         ) {
             let moved_board = self.make_move(mv)?;
 
@@ -1724,12 +1723,24 @@ impl Board {
             if self.is_in_check(self.color_to_move)? {
                 debug!("Position is checkmate for {}", self.color_to_move);
                 return match self.color_to_move {
-                    WHITE => Ok(cache_result!(None::<Move>, Score::checkmate_white(), 1, 0)),
-                    BLACK => Ok(cache_result!(None::<Move>, Score::checkmate_black(), 1, 0)),
+                    WHITE => Ok(cache_result!(
+                        None::<Move>,
+                        Score::checkmate_white(),
+                        1,
+                        0,
+                        Vec::new()
+                    )),
+                    BLACK => Ok(cache_result!(
+                        None::<Move>,
+                        Score::checkmate_black(),
+                        1,
+                        0,
+                        Vec::new()
+                    )),
                 };
             } else {
                 debug!("Position is stalemate");
-                return Ok(cache_result!(None::<Move>, Score::ZERO, 1, 0));
+                return Ok(cache_result!(None::<Move>, Score::ZERO, 1, 0, Vec::new()));
             }
         }
 
@@ -1738,7 +1749,8 @@ impl Board {
             best_move,
             best_score,
             node_count,
-            max_depth - curr_depth // searched to this depth, nominally. could be more with extensions
+            max_depth - curr_depth, // searched to this depth, nominally. could be more with extensions
+            pv.clone()
         ))
     }
 
