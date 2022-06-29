@@ -466,7 +466,7 @@ impl Board {
             new.fullmove_clock += 1;
         }
 
-        if self.is_pawn_advance(mv)? || self.is_capture(mv)? {
+        if self.is_pawn_advance(mv) || self.is_capture(mv) {
             new.halfmove_clock = 0;
         } else {
             new.halfmove_clock += 1
@@ -476,18 +476,18 @@ impl Board {
         Ok(new)
     }
 
-    fn is_pawn_advance(&self, mv: Move) -> Result<bool> {
+    fn is_pawn_advance(&self, mv: Move) -> bool {
         match mv {
-            Move::Single { from, .. } => Ok((bitboard![from]
+            Move::Single { from, .. } => (bitboard![from]
                 & (self.presence_white.pawn | self.presence_black.pawn))
-                .non_empty()),
-            Move::Promote { .. } => Ok(true),
-            Move::CastleKingside => Ok(false),
-            Move::CastleQueenside => Ok(false),
+                .non_empty(),
+            Move::Promote { .. } => true,
+            Move::CastleKingside => false,
+            Move::CastleQueenside => false,
         }
     }
 
-    fn is_capture(&self, mv: Move) -> Result<bool> {
+    fn is_capture(&self, mv: Move) -> bool {
         // TODO include en passant capture here
         match mv {
             Move::Single { from: _, to }
@@ -495,21 +495,9 @@ impl Board {
                 from: _,
                 to,
                 piece: _,
-            } => {
-                if (self.presence_for(self.color_to_move.opposite()).all & bitboard!(to))
-                    .non_empty()
-                {
-                    Ok(true)
-                } else if (self.presence_for(self.color_to_move).all & bitboard!(to)).non_empty() {
-                    Err(IllegalMove(
-                        "Trying to capture piece of same color".to_string(),
-                    ))
-                } else {
-                    Ok(false)
-                }
-            }
-            Move::CastleKingside => Ok(false),
-            Move::CastleQueenside => Ok(false),
+            } => (self.presence_for(self.color_to_move.opposite()).all & bitboard!(to)).non_empty(),
+            Move::CastleKingside => false,
+            Move::CastleQueenside => false,
         }
     }
 
